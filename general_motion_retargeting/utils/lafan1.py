@@ -29,9 +29,16 @@ def load_bvh_file(bvh_file, format="lafan1"):
             result[bone] = [position, orientation]
             
         if format == "lafan1":
-            # Add modified foot pose
-            result["LeftFootMod"] = [result["LeftFoot"][0], result["LeftToe"][1]]
-            result["RightFootMod"] = [result["RightFoot"][0], result["RightToe"][1]]
+            left_toe_name = "LeftToe" if "LeftToe" in result else "LeftToeBase"
+            right_toe_name = "RightToe" if "RightToe" in result else "RightToeBase"
+            if left_toe_name not in result or right_toe_name not in result:
+                missing = [name for name in [left_toe_name, right_toe_name] if name not in result]
+                raise KeyError(
+                    f"Missing toe joints for BVH foot alignment: {missing}. "
+                    "Expected LeftToe/RightToe or LeftToeBase/RightToeBase."
+                )
+            result["LeftFootMod"] = [result["LeftFoot"][0], result[left_toe_name][1]]
+            result["RightFootMod"] = [result["RightFoot"][0], result[right_toe_name][1]]
         elif format == "nokov":
             result["LeftFootMod"] = [result["LeftFoot"][0], result["LeftToeBase"][1]]
             result["RightFootMod"] = [result["RightFoot"][0], result["RightToeBase"][1]]
