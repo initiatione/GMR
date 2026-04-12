@@ -32,6 +32,7 @@ This repo is licensed under the [MIT License](LICENSE).
 
 
 # News & Updates
+- **2026-04-13:** Added local `T800` registration for BVH retargeting in this repo, including a dedicated GMR-only MuJoCo asset and `bvh_lafan1_to_t800.json`.
 - **2026-01-21:** GMR now supports [Xsens](https://www.xsens.com/) BVH offline data.
 - **2026-01-12:** GMR now supports [Fourier GR3](https://www.fftai.com/), the 17th humanoid robot in the repo.
 - **2025-12-02:** GMR now supports [TWIST2](https://yanjieze.com/TWIST2), which utilizes [XRoboToolkit SDK](https://github.com/XR-Robotics/XRoboToolkit-PC-Service).
@@ -174,6 +175,7 @@ This repo is licensed under the [MIT License](LICENSE).
 | More robots coming soon ! |
 | 18 | AgiBot A2 `agibot_a2` | TBD | TBD | TBD | TBD | TBD |
 | 19 | OpenLoong `openloong` | TBD | TBD | TBD | TBD | TBD |
+| 20 | T800 `t800` | Head (2) + Arm (2*5) + Waist (1) + Leg (2*6) = 25 | TBD | ✅ | TBD | TBD |
 
 
 
@@ -335,6 +337,16 @@ python scripts/bvh_to_robot.py --bvh_file <path_to_bvh_data> --robot <path_to_ro
 By default you should see the visualization of the retargeted robot motion in a mujoco window. 
 - `--rate_limit` is used to limit the rate of the retargeted robot motion to keep the same as the human motion. If you want it as fast as possible, remove `--rate_limit`.
 - `--format` is used to specify the format of the BVH data. Supported formats are `lafan1` and `nokov`.
+- Example for `T800`:
+
+```bash
+python scripts/bvh_to_robot.py \
+  --bvh_file <path_to_bvh_data> \
+  --robot t800 \
+  --format lafan1 \
+  --save_path retargeting_data/t800/example.pkl \
+  --rate_limit
+```
 
 
 Retarget a folder of motions:

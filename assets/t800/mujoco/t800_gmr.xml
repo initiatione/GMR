@@ -1,44 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
 <mujoco model="t800_gmr">
-  <compiler angle="radian" coordinate="local" autolimits="true"/>
-  <option gravity="0 0 -9.81" timestep="0.005"/>
-
+  <compiler angle="radian" autolimits="true" meshdir="../meshes" />
+  <option gravity="0 0 -9.81" timestep="0.005" />
   <!--
     这是一份专门给 GMR 使用的 T800 简化模型：
     1. 根节点是 floating-base，自带 freejoint，满足 GMR 的 qpos 假设：root(7) + joints。
     2. body / joint 名字严格沿用训练侧 T800 语义，方便后续把重定向结果对回训练链。
     3. 这里只保留 IK 与可视化需要的主链刚体，不直接复用训练用 URDF，避免影响训练资产。
+    4. 当前版本使用 proxy geoms 表达链路形状；如果后续要换成真实外观 mesh，保持相同 body / joint 命名即可。
   -->
-
   <default>
-    <joint damping="1.0" armature="0.01" limited="true"/>
-    <geom type="capsule" size="0.03" rgba="0.78 0.78 0.82 1"/>
+    <joint damping="1.0" armature="0.01" limited="true" />
+    <geom type="capsule" size="0.03" rgba="0.78 0.78 0.82 1" />
+    <default class="visual_mesh">
+      <geom type="mesh" contype="0" conaffinity="0" density="0" group="2" rgba="0.82 0.82 0.86 1" />
+    </default>
+    <default class="collision_proxy">
+      <geom group="3" rgba="1 0.5 0 0" />
+    </default>
   </default>
-
+  <asset>
+    <mesh name="LINK_BASE" file="LINK_BASE.stl" />
+    <mesh name="LINK_HIP_PITCH_L" file="LINK_HIP_PITCH_L.stl" />
+    <mesh name="LINK_HIP_ROLL_L" file="LINK_HIP_ROLL_L.stl" />
+    <mesh name="LINK_HIP_YAW_L" file="LINK_HIP_YAW_L.stl" />
+    <mesh name="LINK_KNEE_PITCH_L" file="LINK_KNEE_PITCH_L.stl" />
+    <mesh name="LINK_ANKLE_PITCH_L" file="LINK_ANKLE_PITCH_L.stl" />
+    <mesh name="LINK_ANKLE_ROLL_L" file="LINK_ANKLE_ROLL_L.stl" />
+    <mesh name="LINK_HIP_PITCH_R" file="LINK_HIP_PITCH_R.stl" />
+    <mesh name="LINK_HIP_ROLL_R" file="LINK_HIP_ROLL_R.stl" />
+    <mesh name="LINK_HIP_YAW_R" file="LINK_HIP_YAW_R.stl" />
+    <mesh name="LINK_KNEE_PITCH_R" file="LINK_KNEE_PITCH_R.stl" />
+    <mesh name="LINK_ANKLE_PITCH_R" file="LINK_ANKLE_PITCH_R.stl" />
+    <mesh name="LINK_ANKLE_ROLL_R" file="LINK_ANKLE_ROLL_R.stl" />
+    <mesh name="LINK_TORSO_YAW" file="LINK_TORSO_YAW.stl" />
+    <mesh name="LINK_SHOULDER_PITCH_L" file="LINK_SHOULDER_PITCH_L.stl" />
+    <mesh name="LINK_SHOULDER_ROLL_L" file="LINK_SHOULDER_ROLL_L.stl" />
+    <mesh name="LINK_SHOULDER_YAW_L" file="LINK_SHOULDER_YAW_L.stl" />
+    <mesh name="LINK_ELBOW_PITCH_L" file="LINK_ELBOW_PITCH_L.stl" />
+    <mesh name="LINK_ELBOW_YAW_L" file="LINK_ELBOW_YAW_L.stl" />
+    <mesh name="LINK_SHOULDER_PITCH_R" file="LINK_SHOULDER_PITCH_R.stl" />
+    <mesh name="LINK_SHOULDER_ROLL_R" file="LINK_SHOULDER_ROLL_R.stl" />
+    <mesh name="LINK_SHOULDER_YAW_R" file="LINK_SHOULDER_YAW_R.stl" />
+    <mesh name="LINK_ELBOW_PITCH_R" file="LINK_ELBOW_PITCH_R.stl" />
+    <mesh name="LINK_ELBOW_YAW_R" file="LINK_ELBOW_YAW_R.stl" />
+    <mesh name="LINK_HEAD_PITCH" file="LINK_HEAD_PITCH.stl" />
+    <mesh name="LINK_HEAD_YAW" file="LINK_HEAD_YAW.stl" />
+  </asset>
   <worldbody>
     <body name="LINK_BASE" pos="0 0 0.95">
-      <freejoint name="root"/>
-      <geom type="box" size="0.08 0.06 0.10" rgba="0.70 0.70 0.74 1"/>
-
+      <freejoint name="root" />
+      <geom class="visual_mesh" mesh="LINK_BASE" />
+      <geom type="box" size="0.08 0.06 0.10" rgba="1 0.5 0 0" class="collision_proxy" group="3" />
       <body name="LINK_HIP_PITCH_L" pos="0.0 0.079178 0.0">
-        <joint name="J00_HIP_PITCH_L" type="hinge" axis="0.0 0.96593 -0.25882" range="-3.316 2.269"/>
-        <geom fromto="0 0 0 0.004662 0.040322 -0.10752"/>
+        <joint name="J00_HIP_PITCH_L" type="hinge" axis="0.0 0.96593 -0.25882" range="-3.316 2.269" />
+        <geom class="visual_mesh" mesh="LINK_HIP_PITCH_L" />
+        <geom fromto="0 0 0 0.004662 0.040322 -0.10752" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
         <body name="LINK_HIP_ROLL_L" pos="0.004662 0.040322 -0.10752">
-          <joint name="J01_HIP_ROLL_L" type="hinge" axis="1 0 0" range="-1.082 2.059"/>
-          <geom fromto="0 0 0 0.0094616 0 -0.080512"/>
+          <joint name="J01_HIP_ROLL_L" type="hinge" axis="1 0 0" range="-1.082 2.059" />
+          <geom class="visual_mesh" mesh="LINK_HIP_ROLL_L" />
+          <geom fromto="0 0 0 0.0094616 0 -0.080512" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
           <body name="LINK_HIP_YAW_L" pos="0.0094616 0 -0.080512">
-            <joint name="J02_HIP_YAW_L" type="hinge" axis="0 0 1" range="-1.42244667 3.6022778"/>
-            <geom fromto="0 0 0 -0.037707 0 -0.28792"/>
+            <joint name="J02_HIP_YAW_L" type="hinge" axis="0 0 1" range="-1.42244667 3.6022778" />
+            <geom class="visual_mesh" mesh="LINK_HIP_YAW_L" />
+            <geom fromto="0 0 0 -0.037707 0 -0.28792" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
             <body name="LINK_KNEE_PITCH_L" pos="-0.037707 0 -0.28792">
-              <joint name="J03_KNEE_PITCH_L" type="hinge" axis="0 1 0" range="0 2.355"/>
-              <geom fromto="0 0 0 -0.0027168 0 -0.43867"/>
+              <joint name="J03_KNEE_PITCH_L" type="hinge" axis="0 1 0" range="0 2.355" />
+              <geom class="visual_mesh" mesh="LINK_KNEE_PITCH_L" />
+              <geom fromto="0 0 0 -0.0027168 0 -0.43867" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
               <body name="LINK_ANKLE_PITCH_L" pos="-0.0027168 0 -0.43867">
-                <joint name="J04_ANKLE_PITCH_L" type="hinge" axis="0 1 0" range="-0.68068 0.68068"/>
-                <geom fromto="0 0 0 0.0011073 0 -0.037928"/>
+                <joint name="J04_ANKLE_PITCH_L" type="hinge" axis="0 1 0" range="-0.68068 0.68068" />
+                <geom class="visual_mesh" mesh="LINK_ANKLE_PITCH_L" />
+                <geom fromto="0 0 0 0.0011073 0 -0.037928" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
                 <body name="LINK_ANKLE_ROLL_L" pos="0.0011073 0 -0.037928">
-                  <joint name="J05_ANKLE_ROLL_L" type="hinge" axis="1 0 0" range="-0.3491 0.1745"/>
-                  <geom fromto="0 0 0 0 0 -0.06453"/>
+                  <joint name="J05_ANKLE_ROLL_L" type="hinge" axis="1 0 0" range="-0.3491 0.1745" />
+                  <geom class="visual_mesh" mesh="LINK_ANKLE_ROLL_L" />
+                  <geom fromto="0 0 0 0 0 -0.06453" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
                   <body name="LINK_FOOT_L" pos="0 0 -0.06453">
-                    <geom type="box" size="0.09 0.04 0.015"/>
+                    <geom type="box" size="0.09 0.04 0.015" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
                   </body>
                 </body>
               </body>
@@ -46,27 +85,32 @@
           </body>
         </body>
       </body>
-
       <body name="LINK_HIP_PITCH_R" pos="0.0 -0.079178 0.0">
-        <joint name="J06_HIP_PITCH_R" type="hinge" axis="0.0 0.96593 0.25882" range="-3.316 2.269"/>
-        <geom fromto="0 0 0 0.004662 -0.040322 -0.10752"/>
+        <joint name="J06_HIP_PITCH_R" type="hinge" axis="0.0 0.96593 0.25882" range="-3.316 2.269" />
+        <geom class="visual_mesh" mesh="LINK_HIP_PITCH_R" />
+        <geom fromto="0 0 0 0.004662 -0.040322 -0.10752" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
         <body name="LINK_HIP_ROLL_R" pos="0.004662 -0.040322 -0.10752">
-          <joint name="J07_HIP_ROLL_R" type="hinge" axis="1 0 0" range="-2.059 1.082"/>
-          <geom fromto="0 0 0 0.0094616 0 -0.080512"/>
+          <joint name="J07_HIP_ROLL_R" type="hinge" axis="1 0 0" range="-2.059 1.082" />
+          <geom class="visual_mesh" mesh="LINK_HIP_ROLL_R" />
+          <geom fromto="0 0 0 0.0094616 0 -0.080512" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
           <body name="LINK_HIP_YAW_R" pos="0.0094616 0 -0.080512">
-            <joint name="J08_HIP_YAW_R" type="hinge" axis="0 0 1" range="-3.6022778 1.42244667"/>
-            <geom fromto="0 0 0 -0.037707 0 -0.28792"/>
+            <joint name="J08_HIP_YAW_R" type="hinge" axis="0 0 1" range="-3.6022778 1.42244667" />
+            <geom class="visual_mesh" mesh="LINK_HIP_YAW_R" />
+            <geom fromto="0 0 0 -0.037707 0 -0.28792" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
             <body name="LINK_KNEE_PITCH_R" pos="-0.037707 0 -0.28792">
-              <joint name="J09_KNEE_PITCH_R" type="hinge" axis="0 1 0" range="0 2.355"/>
-              <geom fromto="0 0 0 -0.0027168 0 -0.43867"/>
+              <joint name="J09_KNEE_PITCH_R" type="hinge" axis="0 1 0" range="0 2.355" />
+              <geom class="visual_mesh" mesh="LINK_KNEE_PITCH_R" />
+              <geom fromto="0 0 0 -0.0027168 0 -0.43867" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
               <body name="LINK_ANKLE_PITCH_R" pos="-0.0027168 0 -0.43867">
-                <joint name="J10_ANKLE_PITCH_R" type="hinge" axis="0 1 0" range="-0.68068 0.68068"/>
-                <geom fromto="0 0 0 0.0011073 0 -0.037928"/>
+                <joint name="J10_ANKLE_PITCH_R" type="hinge" axis="0 1 0" range="-0.68068 0.68068" />
+                <geom class="visual_mesh" mesh="LINK_ANKLE_PITCH_R" />
+                <geom fromto="0 0 0 0.0011073 0 -0.037928" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
                 <body name="LINK_ANKLE_ROLL_R" pos="0.0011073 0 -0.037928">
-                  <joint name="J11_ANKLE_ROLL_R" type="hinge" axis="1 0 0" range="-0.1745 0.3491"/>
-                  <geom fromto="0 0 0 0 0 -0.06453"/>
+                  <joint name="J11_ANKLE_ROLL_R" type="hinge" axis="1 0 0" range="-0.1745 0.3491" />
+                  <geom class="visual_mesh" mesh="LINK_ANKLE_ROLL_R" />
+                  <geom fromto="0 0 0 0 0 -0.06453" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
                   <body name="LINK_FOOT_R" pos="0 0 -0.06453">
-                    <geom type="box" size="0.09 0.04 0.015"/>
+                    <geom type="box" size="0.09 0.04 0.015" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
                   </body>
                 </body>
               </body>
@@ -74,65 +118,74 @@
           </body>
         </body>
       </body>
-
       <body name="LINK_TORSO_YAW" pos="0 0 0.10384">
-        <joint name="J12_TORSO_YAW" type="hinge" axis="0 0 1" range="-4.381 1.2392"/>
-        <geom type="box" pos="-0.007 -0.001 0.18" size="0.10 0.12 0.17"/>
-
+        <joint name="J12_TORSO_YAW" type="hinge" axis="0 0 1" range="-4.381 1.2392" />
+        <geom class="visual_mesh" mesh="LINK_TORSO_YAW" />
+        <geom type="box" pos="-0.007 -0.001 0.18" size="0.10 0.12 0.17" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
         <body name="LINK_SHOULDER_PITCH_L" pos="-0.011 0.16303 0.27889">
-          <joint name="J13_SHOULDER_PITCH_L" type="hinge" axis="0.0 0.99678 0.080199" range="-2.967 2.793"/>
-          <geom fromto="0 0 0 0 0.062533 -0.015455"/>
+          <joint name="J13_SHOULDER_PITCH_L" type="hinge" axis="0.0 0.99678 0.080199" range="-2.967 2.793" />
+          <geom class="visual_mesh" mesh="LINK_SHOULDER_PITCH_L" />
+          <geom fromto="0 0 0 0 0.062533 -0.015455" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
           <body name="LINK_SHOULDER_ROLL_L" pos="0 0.062533 -0.015455">
-            <joint name="J14_SHOULDER_ROLL_L" type="hinge" axis="1 0 0" range="-0.384 2.443"/>
-            <geom fromto="0 0 0 0.000034602 0.0085246 -0.082712"/>
+            <joint name="J14_SHOULDER_ROLL_L" type="hinge" axis="1 0 0" range="-0.384 2.443" />
+            <geom class="visual_mesh" mesh="LINK_SHOULDER_ROLL_L" />
+            <geom fromto="0 0 0 0.000034602 0.0085246 -0.082712" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
             <body name="LINK_SHOULDER_YAW_L" pos="0.000034602 0.0085246 -0.082712">
-              <joint name="J15_SHOULDER_YAW_L" type="hinge" axis="0.0 -0.071497 0.99744" range="-2.618 2.618"/>
-              <geom fromto="0 0 0 0.0019252 0.013597 -0.15075"/>
+              <joint name="J15_SHOULDER_YAW_L" type="hinge" axis="0.0 -0.071497 0.99744" range="-2.618 2.618" />
+              <geom class="visual_mesh" mesh="LINK_SHOULDER_YAW_L" />
+              <geom fromto="0 0 0 0.0019252 0.013597 -0.15075" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
               <body name="LINK_ELBOW_PITCH_L" pos="0.0019252 0.013597 -0.15075">
-                <joint name="J16_ELBOW_PITCH_L" type="hinge" axis="0.0 0.99744 0.071497" range="-2.286 0.262"/>
-                <geom fromto="0 0 0 -0.0022091 0.0094362 -0.13182"/>
+                <joint name="J16_ELBOW_PITCH_L" type="hinge" axis="0.0 0.99744 0.071497" range="-2.286 0.262" />
+                <geom class="visual_mesh" mesh="LINK_ELBOW_PITCH_L" />
+                <geom fromto="0 0 0 -0.0022091 0.0094362 -0.13182" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
                 <body name="LINK_ELBOW_YAW_L" pos="-0.0022091 0.0094362 -0.13182">
-                  <joint name="J17_ELBOW_YAW_L" type="hinge" axis="-0.21644 -0.069803 0.9738" range="-2.618 2.618"/>
-                  <geom fromto="0 0 0 0.029436 0.0124855 -0.13222151"/>
+                  <joint name="J17_ELBOW_YAW_L" type="hinge" axis="-0.21644 -0.069803 0.9738" range="-2.618 2.618" />
+                  <geom class="visual_mesh" mesh="LINK_ELBOW_YAW_L" />
+                  <geom fromto="0 0 0 0.029436 0.0124855 -0.13222151" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
                   <body name="LINK_WRIST_END_L" pos="0.029436 0.0124855 -0.13222151">
-                    <geom type="sphere" size="0.035"/>
+                    <geom type="sphere" size="0.035" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
                   </body>
                 </body>
               </body>
             </body>
           </body>
         </body>
-
         <body name="LINK_SHOULDER_PITCH_R" pos="-0.011 -0.16303 0.27889">
-          <joint name="J20_SHOULDER_PITCH_R" type="hinge" axis="0.0 0.99678 -0.080199" range="-2.967 2.793"/>
-          <geom fromto="0 0 0 0 -0.062533 -0.015455"/>
+          <joint name="J20_SHOULDER_PITCH_R" type="hinge" axis="0.0 0.99678 -0.080199" range="-2.967 2.793" />
+          <geom class="visual_mesh" mesh="LINK_SHOULDER_PITCH_R" />
+          <geom fromto="0 0 0 0 -0.062533 -0.015455" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
           <body name="LINK_SHOULDER_ROLL_R" pos="0 -0.062533 -0.015455">
-            <joint name="J21_SHOULDER_ROLL_R" type="hinge" axis="1 0 0" range="-2.443 0.384"/>
-            <geom fromto="0 0 0 0.000034602 -0.0085246 -0.082712"/>
+            <joint name="J21_SHOULDER_ROLL_R" type="hinge" axis="1 0 0" range="-2.443 0.384" />
+            <geom class="visual_mesh" mesh="LINK_SHOULDER_ROLL_R" />
+            <geom fromto="0 0 0 0.000034602 -0.0085246 -0.082712" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
             <body name="LINK_SHOULDER_YAW_R" pos="0.000034602 -0.0085246 -0.082712">
-              <joint name="J22_SHOULDER_YAW_R" type="hinge" axis="0.0 0.071497 0.99744" range="-2.618 2.618"/>
-              <geom fromto="0 0 0 0.0019252 -0.013597 -0.15075"/>
+              <joint name="J22_SHOULDER_YAW_R" type="hinge" axis="0.0 0.071497 0.99744" range="-2.618 2.618" />
+              <geom class="visual_mesh" mesh="LINK_SHOULDER_YAW_R" />
+              <geom fromto="0 0 0 0.0019252 -0.013597 -0.15075" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
               <body name="LINK_ELBOW_PITCH_R" pos="0.0019252 -0.013597 -0.15075">
-                <joint name="J23_ELBOW_PITCH_R" type="hinge" axis="0.0 0.99744 -0.071497" range="-2.286 0.262"/>
-                <geom fromto="0 0 0 -0.0022091 -0.0094362 -0.13182"/>
+                <joint name="J23_ELBOW_PITCH_R" type="hinge" axis="0.0 0.99744 -0.071497" range="-2.286 0.262" />
+                <geom class="visual_mesh" mesh="LINK_ELBOW_PITCH_R" />
+                <geom fromto="0 0 0 -0.0022091 -0.0094362 -0.13182" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
                 <body name="LINK_ELBOW_YAW_R" pos="-0.0022091 -0.0094362 -0.13182">
-                  <joint name="J24_ELBOW_YAW_R" type="hinge" axis="-0.21644 0.069803 0.9738" range="-2.618 2.618"/>
-                  <geom fromto="0 0 0 0.029436 -0.0124855 -0.13222151"/>
+                  <joint name="J24_ELBOW_YAW_R" type="hinge" axis="-0.21644 0.069803 0.9738" range="-2.618 2.618" />
+                  <geom class="visual_mesh" mesh="LINK_ELBOW_YAW_R" />
+                  <geom fromto="0 0 0 0.029436 -0.0124855 -0.13222151" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
                   <body name="LINK_WRIST_END_R" pos="0.029436 -0.0124855 -0.13222151">
-                    <geom type="sphere" size="0.035"/>
+                    <geom type="sphere" size="0.035" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
                   </body>
                 </body>
               </body>
             </body>
           </body>
         </body>
-
         <body name="LINK_HEAD_PITCH" pos="-0.0113 0 0.38604">
-          <joint name="J27_HEAD_PITCH" type="hinge" axis="0 1 0" range="-0.523 0.523"/>
-          <geom fromto="0 0 0 0 0 0.040199"/>
+          <joint name="J27_HEAD_PITCH" type="hinge" axis="0 1 0" range="-0.523 0.523" />
+          <geom class="visual_mesh" mesh="LINK_HEAD_PITCH" />
+          <geom fromto="0 0 0 0 0 0.040199" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
           <body name="LINK_HEAD_YAW" pos="0 0 0.040199">
-            <joint name="J28_HEAD_YAW" type="hinge" axis="0 0 1" range="-1.222 1.222"/>
-            <geom type="sphere" pos="0.018 0 0.08" size="0.06"/>
+            <joint name="J28_HEAD_YAW" type="hinge" axis="0 0 1" range="-1.222 1.222" />
+            <geom class="visual_mesh" mesh="LINK_HEAD_YAW" />
+            <geom type="sphere" pos="0.018 0 0.08" size="0.06" class="collision_proxy" group="3" rgba="1 0.5 0 0" />
           </body>
         </body>
       </body>
