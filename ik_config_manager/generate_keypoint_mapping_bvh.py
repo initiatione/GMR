@@ -38,6 +38,64 @@ def get_bvh_frame_rate(bvh_file_path):
     return None
 
 
+def _apply_generated_ik_config(retargeter: GMR, ik_cfg: dict, actual_human_height: float):
+    """把新生成的 IK 配置直接注入当前 GMR 实例。
+
+    当前主仓库 `GMR` 并没有提供“构造时传入自定义 ik_config 路径”的接口，
+    因此这里采用最小侵入方式：
+    - 先把新配置写回到 retargeter 的各个成员变量；
+    - 再清空旧 task 映射；
+    - 最后重新调用 `setup_retarget_configuration()`。
+    """
+
+    ratio = actual_human_height / ik_cfg["human_height_assumption"] if actual_human_height is not None else 1.0
+    scaled_human_scale_table = {
+        key: float(value) * ratio
+        for key, value in ik_cfg["human_scale_table"].items()
+    }
+
+    retargeter.ik_match_table1 = ik_cfg["ik_match_table1"]
+    retargeter.ik_match_table2 = ik_cfg["ik_match_table2"]
+    retargeter.human_root_name = ik_cfg["human_root_name"]
+    retargeter.robot_root_name = ik_cfg["robot_root_name"]
+    retargeter.use_ik_match_table1 = ik_cfg["use_ik_match_table1"]
+    retargeter.use_ik_match_table2 = ik_cfg["use_ik_match_table2"]
+    retargeter.human_scale_table = scaled_human_scale_table
+    retargeter.ground = ik_cfg["ground_height"] * np.array([0, 0, 1])
+
+    # 这里显式清空旧映射，避免再次 setup 时把旧 task 混进去。
+    retargeter.human_body_to_task1 = {}
+    retargeter.human_body_to_task2 = {}
+    if hasattr(retargeter, "task1_body_to_frame"):
+        retargeter.task1_body_to_frame = {}
+    if hasattr(retargeter, "task2_body_to_frame"):
+        retargeter.task2_body_to_frame = {}
+    retargeter.pos_offsets1 = {}
+    retargeter.rot_offsets1 = {}
+    retargeter.pos_offsets2 = {}
+    retargeter.rot_offsets2 = {}
+    if hasattr(retargeter, "latest_task_targets1"):
+        retargeter.latest_task_targets1 = {}
+    if hasattr(retargeter, "latest_task_targets2"):
+        retargeter.latest_task_targets2 = {}
+    retargeter.task_errors1 = {}
+    retargeter.task_errors2 = {}
+
+    retargeter.setup_retarget_configuration()
+
+
+def _extract_qpos(retarget_result):
+    """兼容不同 GMR 分支的 `retarget()` 返回值。
+
+    - 当前主仓库返回 `qpos`
+    - autoik 分支里某些版本返回 `(qpos, last_qvel, avg_qvel)`
+    """
+
+    if isinstance(retarget_result, tuple):
+        return retarget_result[0]
+    return retarget_result
+
+
 if __name__ == "__main__":
     HERE = pathlib.Path(__file__).parent
 
@@ -102,6 +160,13 @@ if __name__ == "__main__":
     
     parser.add_argument("--target_up_axis", choices=['Y', 'Z'], default='Z',
                         help="目标坐标系的向上轴 (Y-up 或 Z-up)")
+
+    parser.add_argument(
+        "--skip_visualization",
+        action="store_true",
+        default=False,
+        help="只生成 auto IK 配置，不进入后续 MuJoCo 可视化预览阶段。",
+    )
 
     args = parser.parse_args()
 
@@ -241,6 +306,10 @@ if __name__ == "__main__":
     else:
         print("[ERROR] BVH参数生成失败！")
         exit(1)
+
+    if args.skip_visualization:
+        print("[INFO] 已按要求跳过可视化阶段。")
+        exit(0)
     
     with open(output_file, "r", encoding="utf-8") as f:
         ik_cfg = json.load(f)
@@ -271,6 +340,7 @@ if __name__ == "__main__":
         src_human=f"bvh_{args.format}",
         tgt_robot=args.robot,
     )
+    _apply_generated_ik_config(retarget_new, ik_cfg, actual_human_height)
 
     # 从BVH文件中检测源帧率
     src_fps = get_bvh_frame_rate(args.bvh_file)
@@ -293,9 +363,6 @@ if __name__ == "__main__":
     with open(output_file, "r", encoding="utf-8") as f:
         ik_cfg = json.load(f)
     
-    # 获取机器人连杆名称列表用于可视化
-    robot_frames = list(ik_cfg.get("ik_match_table1", {}).keys())
-
     # FPS 统计
     fps_counter = 0
     fps_start_time = time.time()
@@ -336,31 +403,19 @@ if __name__ == "__main__":
             fps_counter = 0
             fps_start_time = current_time
 
-        # 获取当前帧并坐标系对齐
+        # 获取当前帧并执行重定向
         bvh_frame = bvh_data_frames[i]
-        qpos, last_qvel, avg_qvel = retarget_new.retarget(bvh_frame)
+        qpos = _extract_qpos(retarget_new.retarget(bvh_frame))
 
-        # 可视化
-        # robot_motion_viewer.step(
-        #     root_pos=scaled_human_data["Hips"][0],
-        #     root_rot=fixed_root_rot,
-        #     dof_pos=fixed_dof_pos,
-        #     human_motion_data=new_human_data,
-        #     human_pos_offset=np.array([0.0, 0.0, 0.0]),
-        #     show_human_body_name=True,
-        #     robot_frames=robot_frames,
-        #     show_robot_body_name=True,
-        #     rate_limit=args.rate_limit
-        # )
+        # 当前主仓库的 viewer.step 只接受 robot qpos + human_motion_data，
+        # 不再支持 autoik 分支里额外的 robot_frames/show_robot_body_name 参数。
         robot_motion_viewer.step(
-            root_pos=scaled_human_data["Hips"][0],
-            root_rot=fixed_root_rot,
-            dof_pos=fixed_dof_pos,
-            human_motion_data=new_human_data,
+            root_pos=qpos[:3],
+            root_rot=qpos[3:7],
+            dof_pos=qpos[7:],
+            human_motion_data=retarget_new.scaled_human_data,
             human_pos_offset=np.array([0.0, 0.0, 0.0]),
             show_human_body_name=True,
-            robot_frames=robot_frames,
-            show_robot_body_name=True,
             rate_limit=args.rate_limit
         )
 

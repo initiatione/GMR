@@ -22,6 +22,51 @@ from utils.data_processor import load_robot_init, scale_human_data, align_robot_
 from utils.compute_offsets import compute_position_offsets, compute_quaternion_offsets
 
 
+def _apply_generated_ik_config(retargeter: GMR, ik_cfg: dict, actual_human_height: float):
+    """把新生成的 IK 配置直接注入当前 GMR 实例。"""
+
+    ratio = actual_human_height / ik_cfg["human_height_assumption"] if actual_human_height is not None else 1.0
+    scaled_human_scale_table = {
+        key: float(value) * ratio
+        for key, value in ik_cfg["human_scale_table"].items()
+    }
+
+    retargeter.ik_match_table1 = ik_cfg["ik_match_table1"]
+    retargeter.ik_match_table2 = ik_cfg["ik_match_table2"]
+    retargeter.human_root_name = ik_cfg["human_root_name"]
+    retargeter.robot_root_name = ik_cfg["robot_root_name"]
+    retargeter.use_ik_match_table1 = ik_cfg["use_ik_match_table1"]
+    retargeter.use_ik_match_table2 = ik_cfg["use_ik_match_table2"]
+    retargeter.human_scale_table = scaled_human_scale_table
+    retargeter.ground = ik_cfg["ground_height"] * np.array([0, 0, 1])
+
+    retargeter.human_body_to_task1 = {}
+    retargeter.human_body_to_task2 = {}
+    if hasattr(retargeter, "task1_body_to_frame"):
+        retargeter.task1_body_to_frame = {}
+    if hasattr(retargeter, "task2_body_to_frame"):
+        retargeter.task2_body_to_frame = {}
+    retargeter.pos_offsets1 = {}
+    retargeter.rot_offsets1 = {}
+    retargeter.pos_offsets2 = {}
+    retargeter.rot_offsets2 = {}
+    if hasattr(retargeter, "latest_task_targets1"):
+        retargeter.latest_task_targets1 = {}
+    if hasattr(retargeter, "latest_task_targets2"):
+        retargeter.latest_task_targets2 = {}
+    retargeter.task_errors1 = {}
+    retargeter.task_errors2 = {}
+    retargeter.setup_retarget_configuration()
+
+
+def _extract_qpos(retarget_result):
+    """兼容不同 GMR 分支的 `retarget()` 返回值。"""
+
+    if isinstance(retarget_result, tuple):
+        return retarget_result[0]
+    return retarget_result
+
+
 
 if __name__ == "__main__":
     HERE = pathlib.Path(__file__).parent
@@ -79,6 +124,13 @@ if __name__ == "__main__":
                         help="输入 IK 配置路径（支持 ik_match_table1&2 字典结构）。")
     parser.add_argument("--ik_config_out", type=str, required=True,
                         help="写回 qoffset_quat 的输出 IK 路径。")
+
+    parser.add_argument(
+        "--skip_visualization",
+        action="store_true",
+        default=False,
+        help="只生成 auto IK 配置，不进入后续 MuJoCo 可视化预览阶段。",
+    )
 
     args = parser.parse_args()
 
@@ -227,6 +279,10 @@ if __name__ == "__main__":
         print("[ERROR] 参数生成失败！")
         exit(1)
 
+    if args.skip_visualization:
+        print("[INFO] 已按要求跳过可视化阶段。")
+        exit(0)
+
     with open(output_file, "r", encoding="utf-8") as f:
         ik_cfg = json.load(f)
         
@@ -256,6 +312,7 @@ if __name__ == "__main__":
         src_human="smplx",
         tgt_robot=args.robot,
     )
+    _apply_generated_ik_config(retarget_new, ik_cfg, actual_human_height)
 
     # 初始化可视化器
     robot_motion_viewer = RobotMotionViewer(
@@ -265,9 +322,6 @@ if __name__ == "__main__":
         record_video=args.record_video,
         video_path=f"videos/{args.robot}_{pathlib.Path(args.smplx_file).stem}.mp4",
     )
-
-    # 获取机器人连杆名称列表用于可视化
-    robot_frames = ik_cfg_tmp.get("ik_match_table1", {}).keys()
 
     # 渲染 FPS 统计
     fps_counter = 0
@@ -309,18 +363,16 @@ if __name__ == "__main__":
             fps_start_time = current_time
 
         smplx_frame = smplx_data_frames[i]
-        qpos, last_qvel, avg_qvel = retarget_new.retarget(smplx_frame)
+        qpos = _extract_qpos(retarget_new.retarget(smplx_frame))
 
         # 可视化
         robot_motion_viewer.step(
-            root_pos=scaled_human_data["pelvis"][0],
-            root_rot=fixed_root_rot,
-            dof_pos=fixed_dof_pos,
-            human_motion_data=new_human_data,
+            root_pos=qpos[:3],
+            root_rot=qpos[3:7],
+            dof_pos=qpos[7:],
+            human_motion_data=retarget_new.scaled_human_data,
             human_pos_offset=np.array([0.0, 0.0, 0.0]),
             show_human_body_name=True,
-            robot_frames=robot_frames,
-            show_robot_body_name=True,
             rate_limit=args.rate_limit
         )
 
