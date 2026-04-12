@@ -191,4 +191,36 @@
       </body>
     </body>
   </worldbody>
+
+  <!--
+    这里补一组最小 actuator，只是为了让 GMR_autoik 的 FK/关节顺序工具能够识别“可驱动关节集合”。
+    当前 gear 统一设为 1，不承担真实控制含义；后续如需做更完整的动力学仿真，再细化 actuator 参数。
+  -->
+  <actuator>
+    <motor name="J00_HIP_PITCH_L" joint="J00_HIP_PITCH_L" gear="1"/>
+    <motor name="J01_HIP_ROLL_L" joint="J01_HIP_ROLL_L" gear="1"/>
+    <motor name="J02_HIP_YAW_L" joint="J02_HIP_YAW_L" gear="1"/>
+    <motor name="J03_KNEE_PITCH_L" joint="J03_KNEE_PITCH_L" gear="1"/>
+    <motor name="J04_ANKLE_PITCH_L" joint="J04_ANKLE_PITCH_L" gear="1"/>
+    <motor name="J05_ANKLE_ROLL_L" joint="J05_ANKLE_ROLL_L" gear="1"/>
+    <motor name="J06_HIP_PITCH_R" joint="J06_HIP_PITCH_R" gear="1"/>
+    <motor name="J07_HIP_ROLL_R" joint="J07_HIP_ROLL_R" gear="1"/>
+    <motor name="J08_HIP_YAW_R" joint="J08_HIP_YAW_R" gear="1"/>
+    <motor name="J09_KNEE_PITCH_R" joint="J09_KNEE_PITCH_R" gear="1"/>
+    <motor name="J10_ANKLE_PITCH_R" joint="J10_ANKLE_PITCH_R" gear="1"/>
+    <motor name="J11_ANKLE_ROLL_R" joint="J11_ANKLE_ROLL_R" gear="1"/>
+    <motor name="J12_TORSO_YAW" joint="J12_TORSO_YAW" gear="1"/>
+    <motor name="J13_SHOULDER_PITCH_L" joint="J13_SHOULDER_PITCH_L" gear="1"/>
+    <motor name="J14_SHOULDER_ROLL_L" joint="J14_SHOULDER_ROLL_L" gear="1"/>
+    <motor name="J15_SHOULDER_YAW_L" joint="J15_SHOULDER_YAW_L" gear="1"/>
+    <motor name="J16_ELBOW_PITCH_L" joint="J16_ELBOW_PITCH_L" gear="1"/>
+    <motor name="J17_ELBOW_YAW_L" joint="J17_ELBOW_YAW_L" gear="1"/>
+    <motor name="J20_SHOULDER_PITCH_R" joint="J20_SHOULDER_PITCH_R" gear="1"/>
+    <motor name="J21_SHOULDER_ROLL_R" joint="J21_SHOULDER_ROLL_R" gear="1"/>
+    <motor name="J22_SHOULDER_YAW_R" joint="J22_SHOULDER_YAW_R" gear="1"/>
+    <motor name="J23_ELBOW_PITCH_R" joint="J23_ELBOW_PITCH_R" gear="1"/>
+    <motor name="J24_ELBOW_YAW_R" joint="J24_ELBOW_YAW_R" gear="1"/>
+    <motor name="J27_HEAD_PITCH" joint="J27_HEAD_PITCH" gear="1"/>
+    <motor name="J28_HEAD_YAW" joint="J28_HEAD_YAW" gear="1"/>
+  </actuator>
 </mujoco>
