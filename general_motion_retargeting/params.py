@@ -1,8 +1,48 @@
+import os
 import pathlib
 
 HERE = pathlib.Path(__file__).parent
 IK_CONFIG_ROOT = HERE / "ik_configs"
 ASSET_ROOT = HERE / ".." / "assets"
+
+
+def _resolve_whole_body_tracking_engineai_asset(*relative_parts: str) -> pathlib.Path:
+    """解析 whole_body_tracking_engineai 仓库里的外部机器人资产路径。
+
+    这里单独做一个路径解析函数，而不是把 T800 的 URDF 路径直接写死，
+    是因为本地开发机和云端目录布局并不完全一致：
+    - 本地通常是 `d:\\human_robot\\whole_body_tracking_engineai`
+    - 云端可能是 `/root/human_robot/whole_body_tracking_engineai`
+    - 也可能由用户通过环境变量显式指定
+
+    因此这里按“环境变量优先、常见相对路径次之、最后回退到默认候选”的顺序查找。
+    """
+
+    candidate_roots = []
+
+    # 允许用户在云端显式指定外部仓库根目录，避免目录布局变化后仍然要改代码。
+    env_root = os.environ.get("WHOLE_BODY_TRACKING_ENGINEAI_ROOT")
+    if env_root:
+        candidate_roots.append(pathlib.Path(env_root))
+
+    # 当前工作区里最常见的布局：GMR 和 whole_body_tracking_engineai 在同一个上层目录下。
+    candidate_roots.append((HERE / ".." / ".." / "whole_body_tracking_engineai").resolve())
+
+    # 云端常用布局：GMR 与 human_robot 工程不在同一个上层目录，但 whole_body_tracking_engineai 在 /root/human_robot 下。
+    candidate_roots.append(pathlib.Path("/root/human_robot/whole_body_tracking_engineai"))
+
+    # 回退路径：即使前面的候选都不存在，也返回一个稳定的默认候选，便于错误信息里显示最终尝试位置。
+    fallback_root = (HERE / ".." / ".." / "whole_body_tracking_engineai").resolve()
+
+    for candidate_root in candidate_roots:
+        candidate_path = candidate_root / "source" / "whole_body_tracking" / "whole_body_tracking" / "assets"
+        candidate_asset = candidate_path.joinpath(*relative_parts)
+        if candidate_asset.exists():
+            return candidate_asset
+
+    return (fallback_root / "source" / "whole_body_tracking" / "whole_body_tracking" / "assets").joinpath(
+        *relative_parts
+    )
 
 ROBOT_XML_DICT = {
     "unitree_g1": ASSET_ROOT / "unitree_g1" / "g1_mocap_29dof.xml",
@@ -23,6 +63,9 @@ ROBOT_XML_DICT = {
     "tienkung": ASSET_ROOT / "tienkung" / "mjcf" / "tienkung.xml",
     "pal_talos": ASSET_ROOT / "pal_talos" / "talos.xml",
     "fourier_gr3": ASSET_ROOT / "fourier_gr3v2_1_1" / "mjcf" / "gr3v2_1_1_dummy_hand.xml",
+    # T800 当前复用 whole_body_tracking_engineai 仓库中的 URDF 资产。
+    # Mujoco 在运行时会基于这个 URDF 解析 link/joint，并作为 Mink 的 IK 模型输入。
+    "t800": _resolve_whole_body_tracking_engineai_asset("t800", "urdf", "serial_t800.urdf"),
 }
 
 IK_CONFIG_DICT = {
@@ -54,6 +97,7 @@ IK_CONFIG_DICT = {
         "stanford_toddy": IK_CONFIG_ROOT / "bvh_lafan1_to_toddy.json",
         "engineai_pm01": IK_CONFIG_ROOT / "bvh_lafan1_to_pm01.json",
         "pal_talos": IK_CONFIG_ROOT / "bvh_to_talos.json",
+        "t800": IK_CONFIG_ROOT / "bvh_lafan1_to_t800.json",
     },
     "bvh_nokov":{
         "unitree_g1": IK_CONFIG_ROOT / "bvh_nokov_to_g1.json",
@@ -98,6 +142,7 @@ ROBOT_BASE_DICT = {
     "tienkung": "Base_link",
     "pal_talos": "base_link",
     "fourier_gr3": "base_link",
+    "t800": "LINK_BASE",
 }
 
 VIEWER_CAM_DISTANCE_DICT = {
@@ -119,4 +164,5 @@ VIEWER_CAM_DISTANCE_DICT = {
     "tienkung": 3.0,
     "pal_talos": 3.0,
     "fourier_gr3": 2.0,
+    "t800": 2.0,
 }
