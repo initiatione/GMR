@@ -72,6 +72,20 @@ if __name__ == "__main__":
         default=30,
         type=int,
     )
+
+    parser.add_argument(
+        "--debug_log_path",
+        type=str,
+        default=None,
+        help="可选：把每帧 IK 数值误差与 target/current frame 信息写成 jsonl 调试日志。",
+    )
+
+    parser.add_argument(
+        "--debug_log_every_n",
+        type=int,
+        default=1,
+        help="调试日志采样间隔。默认每帧都记录；设为 10 表示每 10 帧记录一次。",
+    )
     
     args = parser.parse_args()
     
@@ -91,6 +105,8 @@ if __name__ == "__main__":
         src_human=f"bvh_{args.format}",
         tgt_robot=args.robot,
         actual_human_height=actual_human_height,
+        debug_log_path=args.debug_log_path,
+        debug_log_every_n=args.debug_log_every_n,
     )
 
     motion_fps = args.motion_fps
@@ -137,7 +153,7 @@ if __name__ == "__main__":
         smplx_data = lafan1_data_frames[i]
 
         # retarget
-        qpos = retargeter.retarget(smplx_data)
+        qpos = retargeter.retarget(smplx_data, frame_index=i)
         
 
         # visualize
