@@ -10,13 +10,14 @@
   - 满足 `GMR` 对 `qpos = root(7) + joints` 的结构假设。
   - 保持与训练侧 `T800` 一致的主链 body / joint 语义。
   - 不直接修改 `whole_body_tracking_engineai` 里的训练资产。
-  - 先用 proxy geoms 跑通重定向链路，避免直接把训练侧 `.dae` mesh 硬塞进 MuJoCo 造成兼容问题。
+  - 当前版本使用训练侧导出的 `STL` visual mesh，加上收细后的 proxy collision primitives，在外观与稳定性之间取平衡。
 
 ## URDF / Mesh 对应关系
 
 - 运动学主链来自 `whole_body_tracking_engineai/source/whole_body_tracking/whole_body_tracking/assets/t800/urdf/serial_t800.urdf`。
 - 当前 `GMR` 资产保留了同一套 `LINK_* / J**_*` 命名，方便把 `qpos` 回对到训练链。
 - 当前仓库已经从训练侧 `.dae` 批量导出了一份 `assets/t800/meshes/*.stl`，并在 `mujoco/t800_gmr.xml` 里作为 visual mesh 使用。
+- collision 目前优先复用训练侧 URDF 里的原始碰撞体；对原始 URDF 未提供 collision 的 link，再用 mesh 包围盒补 box。
 - 如果后续需要真实外观 mesh：
   - 当前仓库优先使用从训练侧 `.dae` 导出的 `.stl` 作为 MuJoCo visual mesh。
   - 然后在 `mujoco/t800_gmr.xml` 的 `<asset>` 中声明 mesh，并保持现有 body / joint 树不变。
