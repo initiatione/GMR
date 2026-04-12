@@ -34,6 +34,7 @@ class GeneralMotionRetargeting:
         print("[GMR] Robot Degrees of Freedom (DoF) names and their order:")
         self.robot_dof_names = {}
         self.robot_dof_names_in_order = []
+        self.robot_actuated_joint_names_in_order = []
         for i in range(self.model.nv):  # 'nv' is the number of DoFs
             dof_name = mj.mj_id2name(self.model, mj.mjtObj.mjOBJ_JOINT, self.model.dof_jntid[i])
             self.robot_dof_names[dof_name] = i
@@ -55,6 +56,7 @@ class GeneralMotionRetargeting:
         for i in range(self.model.nu):  # 'nu' is the number of actuators (motors)
             motor_name = mj.mj_id2name(self.model, mj.mjtObj.mjOBJ_ACTUATOR, i)
             self.robot_motor_names[motor_name] = i
+            self.robot_actuated_joint_names_in_order.append(motor_name)
             if verbose:
                 print(f"Motor ID {i}: {motor_name}")
 
@@ -423,12 +425,18 @@ class GeneralMotionRetargeting:
                 "frame_name": frame_name,
                 "task_error_vector": task_error_vector.tolist(),
                 "task_error_norm": float(np.linalg.norm(task_error_vector)),
+                # 这里显式说明：下面这几个 `mink_*` 误差来自 Mink 的局部 se(3) 误差向量，
+                # 不是简单的世界坐标位置差或欧拉角差。
+                # 它们适合比较“优化前后是否变好”，但不应直接解释为米/度。
+                "mink_task_error_norm_local": float(np.linalg.norm(task_error_vector)),
             }
 
             if task_error_vector.shape[0] >= 3:
                 task_entry["task_position_error_norm"] = float(np.linalg.norm(task_error_vector[:3]))
+                task_entry["mink_task_position_error_norm_local"] = float(np.linalg.norm(task_error_vector[:3]))
             if task_error_vector.shape[0] >= 6:
                 task_entry["task_orientation_error_norm"] = float(np.linalg.norm(task_error_vector[3:6]))
+                task_entry["mink_task_orientation_error_norm_local"] = float(np.linalg.norm(task_error_vector[3:6]))
 
             if target_info is not None:
                 task_entry["target_pos"] = target_info["target_pos"].tolist()
@@ -447,6 +455,9 @@ class GeneralMotionRetargeting:
                         target_quat,
                         current_quat,
                     )
+                    # 这里补一组更明确的字段名，避免后续把世界坐标误差和 Mink 局部误差混淆。
+                    task_entry["world_position_error_norm_m"] = task_entry["position_error_norm"]
+                    task_entry["world_orientation_error_deg"] = task_entry["orientation_error_deg"]
 
             task_debug_info[body_name] = task_entry
 
@@ -479,7 +490,12 @@ class GeneralMotionRetargeting:
             "root_pos": qpos[:3].tolist(),
             "root_rot_wxyz": qpos[3:7].tolist(),
             "dof_pos": qpos[7:].tolist(),
-            "dof_names_in_order": self.robot_dof_names_in_order,
+            # `dof_names_in_order_full_nv` 对应的是 Mujoco `nv` 维速度自由度，含 freejoint 的重复 root 名。
+            "dof_names_in_order_full_nv": self.robot_dof_names_in_order,
+            # `actuated_joint_names_in_order` 才和 `dof_pos` 一一对应。
+            "actuated_joint_names_in_order": self.robot_actuated_joint_names_in_order,
+            # 为兼容旧分析脚本，暂时保留原字段，但语义上等同于 actuated joint 顺序。
+            "dof_names_in_order": self.robot_actuated_joint_names_in_order,
             "task_table1": self.collect_task_debug_info(
                 self.human_body_to_task1,
                 self.task1_body_to_frame,
