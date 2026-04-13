@@ -14,3 +14,4 @@
 - Added `contact exclude` rules in `assets/t800/mujoco/t800_full_gmr.xml` to suppress the initial `LINK_BASE` vs `LINK_HIP_ROLL_{L,R}` self-collision that caused first-frame joint explosion.
 - Added a gradient skybox, brighter headlight settings, and a top scene light to `assets/t800/mujoco/t800_full_gmr.xml` to improve local IK tuning visibility.
 - Copied local LAFAN1 motion file `aiming1_subject1.bvh` to workspace root as `D:\human_robot\aiming1_subject1.bvh` for T800 ik_config tuning.
+- Added `scripts/adjust_xml_transparency.py`, a generic XML transparency utility that reads an existing XML and writes a new transparent XML file; verified by generating `D:\human_robot\t800_full_gmr_transparent.xml` from `assets/t800/mujoco/t800_full_gmr.xml` with alpha `0.22`.

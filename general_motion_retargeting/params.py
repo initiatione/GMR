@@ -26,6 +26,8 @@ ROBOT_XML_DICT = {
     # T800 当前默认走 richer 的 full_gmr 版本。
     # 这份模型在 from_urdf 基础上进一步对齐了 URDF 惯量与 actuator 力限制，同时保留 GMR 所需的 floating-base 结构。
     "t800": ASSET_ROOT / "t800" / "mujoco" / "t800_full_gmr.xml",
+    # 透明版 T800 模型，主要用于调试 IK 配置时查看骨骼结构和坐标轴方向。
+    "t800_transparent": ASSET_ROOT / "t800" / "mujoco" / "t800_full_gmr_transparent.xml",
 }
 
 IK_CONFIG_DICT = {
@@ -60,6 +62,7 @@ IK_CONFIG_DICT = {
         #"t800": IK_CONFIG_ROOT / "bvh_lafan1_to_t800.json",
         # 手动调参ik_config测试：
         "t800": IK_CONFIG_ROOT / "bvh_lafan1_to_t800_origin_manual.json",
+        "t800_transparent": IK_CONFIG_ROOT / "bvh_lafan1_to_t800_origin_manual.json",
     },
     "bvh_nokov":{
         "unitree_g1": IK_CONFIG_ROOT / "bvh_nokov_to_g1.json",
@@ -105,6 +108,7 @@ ROBOT_BASE_DICT = {
     "pal_talos": "base_link",
     "fourier_gr3": "base_link",
     "t800": "LINK_BASE",
+    "t800_transparent": "LINK_BASE",
 }
 
 VIEWER_CAM_DISTANCE_DICT = {
@@ -127,6 +131,7 @@ VIEWER_CAM_DISTANCE_DICT = {
     "pal_talos": 3.0,
     "fourier_gr3": 2.0,
     "t800": 2.0,
+    "t800_transparent": 2.0,
 }
 
 
