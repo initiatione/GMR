@@ -13,3 +13,4 @@
 - Added a visible and collidable floor plane to `assets/t800/mujoco/t800_full_gmr.xml` for local MuJoCo debugging and IK tuning.
 - Added `contact exclude` rules in `assets/t800/mujoco/t800_full_gmr.xml` to suppress the initial `LINK_BASE` vs `LINK_HIP_ROLL_{L,R}` self-collision that caused first-frame joint explosion.
 - Added a gradient skybox, brighter headlight settings, and a top scene light to `assets/t800/mujoco/t800_full_gmr.xml` to improve local IK tuning visibility.
+- Copied local LAFAN1 motion file `aiming1_subject1.bvh` to workspace root as `D:\human_robot\aiming1_subject1.bvh` for T800 ik_config tuning.
