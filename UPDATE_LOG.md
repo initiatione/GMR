@@ -15,3 +15,4 @@
 - Added a gradient skybox, brighter headlight settings, and a top scene light to `assets/t800/mujoco/t800_full_gmr.xml` to improve local IK tuning visibility.
 - Copied local LAFAN1 motion file `aiming1_subject1.bvh` to workspace root as `D:\human_robot\aiming1_subject1.bvh` for T800 ik_config tuning.
 - Added `scripts/adjust_xml_transparency.py`, a generic XML transparency utility that reads an existing XML and writes a new transparent XML file; verified by generating `D:\human_robot\t800_full_gmr_transparent.xml` from `assets/t800/mujoco/t800_full_gmr.xml` with alpha `0.22`.
+- Added `t800_transparent` to the `bvh_to_robot.py` robot choices and renamed the transparent MuJoCo model title to `t800_full_gmr_transparent` for easier debug-window identification.
