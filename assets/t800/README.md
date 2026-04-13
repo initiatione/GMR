@@ -25,7 +25,7 @@
 - 运动学主链来自 `whole_body_tracking_engineai/source/whole_body_tracking/whole_body_tracking/assets/t800/urdf/serial_t800.urdf`。
 - 当前仓库已经从训练侧 `.dae` 批量导出了一份 `assets/t800/meshes/*.stl`，并在 `mujoco/*.xml` 里作为 visual mesh 使用。
 - `t800_from_urdf.xml`：以工具从 URDF 导出的基线 MJCF 为底稿，再补上 `LINK_BASE/freejoint`、visual mesh、末端 body 和 actuator。
-- `t800_full_gmr.xml`：在 `t800_from_urdf.xml` 上进一步精确对齐了 URDF 的质量/惯量，并给 actuator 补上了基于 URDF effort 的 `ctrlrange/forcerange`；碰撞体保留“URDF 原始 collision + 对无原始 collision link 的 fallback 补体”。
+- `t800_full_gmr.xml`：在 `t800_from_urdf.xml` 上进一步精确对齐了 URDF 的质量/惯量，并给 actuator 补上了基于 URDF effort 的 `ctrlrange/forcerange`；碰撞体已明确拆成两层：`collision_urdf`（group 3，对应训练侧 URDF 原生碰撞）和 `collision_fallback`（group 4，对应无原始 collision link 的补体）。
 - `t800_gmr.xml`：保留了相同 body / joint 命名，但更偏轻量化和历史兼容用途。
 
 ## 边界
@@ -38,3 +38,4 @@
   - 可视化调试
   - 导出中间动作结果
 - 当前仍然没有从 URDF 直接继承的真实传动/摩擦参数；`joint damping/armature` 仍是 GMR 侧的经验值。
+
