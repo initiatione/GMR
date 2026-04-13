@@ -43,9 +43,16 @@
     <mesh name="LINK_ELBOW_YAW_R" file="LINK_ELBOW_YAW_R.stl" />
     <mesh name="LINK_HEAD_PITCH" file="LINK_HEAD_PITCH.stl" />
     <mesh name="LINK_HEAD_YAW" file="LINK_HEAD_YAW.stl" />
+    <texture name="groundplane" type="2d" builtin="checker" rgb1="0.20 0.24 0.28" rgb2="0.12 0.16 0.20" width="512" height="512" />
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="6 6" reflectance="0.15" />
   </asset>
+  <contact>
+    <exclude body1="LINK_BASE" body2="LINK_HIP_ROLL_L" />
+    <exclude body1="LINK_BASE" body2="LINK_HIP_ROLL_R" />
+  </contact>
   <worldbody>
-    <body name="LINK_BASE" pos="0 0 0.95">
+    <geom name="floor" type="plane" pos="0 0 0" size="0 0 0.01" material="groundplane" contype="1" conaffinity="0" priority="1" friction="0.6" condim="3" />
+    <body name="LINK_BASE" pos="0 0 1.02">
       <inertial pos="-0.00113725 -0.00039847 0.03264622" mass="10.15411355" fullinertia="0.05091346 0.03420785 0.03312684 -6.512e-05 -0.00052668 -7.559e-05" />
       <freejoint name="root" />
       <geom class="visual_mesh" mesh="LINK_BASE" />
