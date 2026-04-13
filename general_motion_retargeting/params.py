@@ -23,9 +23,10 @@ ROBOT_XML_DICT = {
     "tienkung": ASSET_ROOT / "tienkung" / "mjcf" / "tienkung.xml",
     "pal_talos": ASSET_ROOT / "pal_talos" / "talos.xml",
     "fourier_gr3": ASSET_ROOT / "fourier_gr3v2_1_1" / "mjcf" / "gr3v2_1_1_dummy_hand.xml",
-    # T800 在 GMR 中使用一份专门的 floating-base Mujoco 模型，
-    # 这样既不污染训练侧资产，也能满足 GMR 的 qpos 结构假设。
-    "t800": ASSET_ROOT / "t800" / "mujoco" / "t800_gmr.xml",
+    # T800 默认走基于训练侧 URDF 转换并补齐 GMR 结构的 from_urdf 版本。
+    # 这样保留了更接近训练侧的惯量/链接信息，同时继续满足 GMR 的 qpos 结构假设。
+    # 补充更多模型细节 使用t800_full_gmr 版本，包含了更多的模型细节（如惯量、链接、limit等）。
+    "t800": ASSET_ROOT / "t800" / "mujoco" / "t800_full_gmr.xml",
 }
 
 IK_CONFIG_DICT = {
@@ -126,3 +127,6 @@ VIEWER_CAM_DISTANCE_DICT = {
     "fourier_gr3": 2.0,
     "t800": 2.0,
 }
+
+
+
