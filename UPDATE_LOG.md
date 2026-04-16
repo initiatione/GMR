@@ -27,3 +27,30 @@
 - 已增强 `scripts/align_cmu_bvh_to_lafan1.py`，新增基于解析后 `Head -> Foot` 高度的自动尺度修复：在完成关节语义改写后，会自动缩放整份 BVH 的 `OFFSET` 与 root 平移通道，使输出尺度接近现有可运行的 LAFAN1/T800 链路
 - 已重新处理 `D:\human_robot\hit_data\cmu\14_01.bvh`，生成 `D:\human_robot\hit_data\cmu\14_01_lafan1_aligned_scaled.bvh` 与对应报告；本次自动应用的缩放因子为 `6.364293`，估计的人体 `head-foot` 高度从 `0.243546m` 修复到 `1.55m`
 - 已验证修复后的 CMU 样例关键高度恢复到正常量级：首帧 `hips_z` 约为 `1.1041m`，`head-foot` 高度约为 `1.55m`
+
+
+## 2026-04-15
+
+
+- 基于 `fight1_subject2.bvh` 的全帧调试日志（7347 帧）完成一轮 `t800` IK 小步调参：
+  - 修改文件：`general_motion_retargeting/ik_configs/bvh_lafan1_to_t800_origin_manual.json`
+  - 同步调整 `ik_match_table1/2` 中以下 link 的 `pos_offset.z`：
+    - `LINK_HIP_YAW_L`: `0.00 -> -0.02`
+    - `LINK_HIP_YAW_R`: `0.00 -> -0.02`
+    - `LINK_SHOULDER_YAW_L`: `-0.01 -> -0.03`
+    - `LINK_SHOULDER_YAW_R`: `-0.01 -> -0.03`
+    - `LINK_WRIST_END_L`: `-0.12 -> -0.10`
+    - `LINK_WRIST_END_R`: `-0.12 -> -0.10`
+- A/B 对比（原配置 vs 调参后，统一使用 `--auto_ground --auto_ground_margin 0.01`）：
+  - `final_error1 mean`: `1.0177 -> 0.9584`（`-5.83%`）
+  - `final_error1 p95`: `1.8178 -> 1.4712`（`-19.07%`）
+  - `final_error2 mean`: `1.0285 -> 0.9668`（`-6.00%`）
+  - `LeftUpLeg pos_mean`: `0.1214 -> 0.1067`（`-12.06%`）
+  - `RightUpLeg pos_mean`: `0.1313 -> 0.1079`（`-17.78%`）
+  - `LeftArm pos_mean`: `0.1342 -> 0.1220`（`-9.10%`）
+  - `RightArm pos_mean`: `0.1480 -> 0.1343`（`-9.27%`）
+
+- 在 `scripts/bvh_to_robot.py` 新增 `--auto_ground` 开关（默认关闭），用于 BVH 重定向前自动估计并应用全局贴地偏移
+- 在 `scripts/bvh_to_robot.py` 新增 `--auto_ground_margin`（默认 `0.0m`），用于控制自动贴地时的地面净空
+- 自动贴地流程会打印 `min_z`、`margin`、`applied_ground_offset`，便于复现实验与排查脚部悬空/穿地问题
+- 已通过 `python -m py_compile scripts/bvh_to_robot.py` 语法校验

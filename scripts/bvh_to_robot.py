@@ -9,6 +9,27 @@ from tqdm import tqdm
 import os
 import numpy as np
 
+def estimate_ground_offset(retargeter: GMR, motion_frames):
+    """Estimate a global z offset so the lowest tracked point touches the ground."""
+    lowest_z = np.inf
+    for human_data in motion_frames:
+        human_data = retargeter.to_numpy(human_data)
+        human_data = retargeter.scale_human_data(
+            human_data,
+            retargeter.human_root_name,
+            retargeter.human_scale_table,
+        )
+        human_data = retargeter.offset_human_data(
+            human_data,
+            retargeter.pos_offsets1,
+            retargeter.rot_offsets1,
+        )
+        for pos, _ in human_data.values():
+            if pos[2] < lowest_z:
+                lowest_z = pos[2]
+
+    return float(lowest_z)
+
 if __name__ == "__main__":
     
     HERE = pathlib.Path(__file__).parent
@@ -75,6 +96,20 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--auto_ground",
+        action="store_true",
+        default=False,
+        help="Automatically offset source motion to ground before retargeting.",
+    )
+
+    parser.add_argument(
+        "--auto_ground_margin",
+        type=float,
+        default=0.0,
+        help="Target clearance above ground (meters) when --auto_ground is enabled.",
+    )
+
+    parser.add_argument(
         "--debug_log_path",
         type=str,
         default=None,
@@ -109,6 +144,19 @@ if __name__ == "__main__":
         debug_log_path=args.debug_log_path,
         debug_log_every_n=args.debug_log_every_n,
     )
+
+    if args.auto_ground:
+        estimated_lowest_z = estimate_ground_offset(retargeter, lafan1_data_frames)
+        if not np.isfinite(estimated_lowest_z):
+            raise RuntimeError("Failed to estimate ground offset from BVH frames.")
+        applied_ground_offset = estimated_lowest_z - args.auto_ground_margin
+        retargeter.set_ground_offset(applied_ground_offset)
+        print(
+            "[auto_ground] "
+            f"min_z={estimated_lowest_z:.6f}, "
+            f"margin={args.auto_ground_margin:.6f}, "
+            f"applied_ground_offset={applied_ground_offset:.6f}"
+        )
 
     motion_fps = args.motion_fps
     
