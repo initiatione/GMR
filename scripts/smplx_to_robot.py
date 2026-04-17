@@ -7,6 +7,7 @@ import numpy as np
 
 from general_motion_retargeting import GeneralMotionRetargeting as GMR
 from general_motion_retargeting import RobotMotionViewer
+from general_motion_retargeting.motion_grounding import align_motion_root_to_ground
 from general_motion_retargeting.utils.smpl import load_smplx_file, get_smplx_data_offline_fast
 
 from rich import print
@@ -62,6 +63,27 @@ if __name__ == "__main__":
         default=False,
         action="store_true",
         help="Limit the rate of the retargeted robot motion to keep the same as the human motion.",
+    )
+
+    parser.add_argument(
+        "--foot-ground-align",
+        dest="foot_ground_align",
+        action="store_true",
+        # 默认关闭，避免无提示地改训练分布。
+        # 只有用户显式开启时，才把导出的 PKL 做贴地修复。
+        help="Ground the saved PKL using actual robot support geoms.",
+    )
+    parser.add_argument(
+        "--foot-ground-mode",
+        choices=["per_frame", "global"],
+        default="per_frame",
+        help="Vertical grounding strategy applied to saved motion.",
+    )
+    parser.add_argument(
+        "--foot-ground-clearance",
+        type=float,
+        default=0.002,
+        help="Target minimum support clearance above ground in meters for saved motion.",
     )
 
     args = parser.parse_args()
@@ -164,6 +186,16 @@ if __name__ == "__main__":
             "local_body_pos": local_body_pos,
             "link_body_list": body_names,
         }
+        if args.foot_ground_align:
+            # 这是导出阶段的显式后处理，不参与 IK 本身。
+            motion_data, grounding_stats = align_motion_root_to_ground(
+                motion_data=motion_data,
+                model_or_path=retarget.xml_file,
+                clearance=args.foot_ground_clearance,
+                mode=args.foot_ground_mode,
+                inplace=False,
+            )
+            print("[foot_ground_align]", grounding_stats)
         with open(args.save_path, "wb") as f:
             pickle.dump(motion_data, f)
         print(f"Saved to {args.save_path}")

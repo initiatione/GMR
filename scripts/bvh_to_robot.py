@@ -3,6 +3,7 @@ import pathlib
 import time
 from general_motion_retargeting import GeneralMotionRetargeting as GMR
 from general_motion_retargeting import RobotMotionViewer
+from general_motion_retargeting.motion_grounding import align_motion_root_to_ground
 from general_motion_retargeting.utils.lafan1 import load_bvh_file
 from rich import print
 from tqdm import tqdm
@@ -10,7 +11,16 @@ import os
 import numpy as np
 
 def estimate_ground_offset(retargeter: GMR, motion_frames):
-    """Estimate a global z offset so the lowest tracked point touches the ground."""
+    """Estimate a source-side global z offset from the human motion itself.
+
+    这是“重定向前”的 auto ground：
+    - 观测的是源人体关键点最低点；
+    - 调整的是输入 human motion 的整体高度。
+
+    它和后面的 `foot_ground_align` 不是一回事：
+    - auto_ground: 先把源动作大致摆正；
+    - foot_ground_align: 重定向结束后，再按机器人真实支撑碰撞体做一次校准。
+    """
     lowest_z = np.inf
     for human_data in motion_frames:
         human_data = retargeter.to_numpy(human_data)
@@ -121,6 +131,25 @@ if __name__ == "__main__":
         type=int,
         default=1,
         help="调试日志采样间隔。默认每帧都记录；设为 10 表示每 10 帧记录一次。",
+    )
+
+    parser.add_argument(
+        "--foot-ground-align",
+        dest="foot_ground_align",
+        action="store_true",
+        help="Ground the saved PKL using actual robot support geoms.",
+    )
+    parser.add_argument(
+        "--foot-ground-mode",
+        choices=["per_frame", "global"],
+        default="per_frame",
+        help="Vertical grounding strategy applied to saved motion.",
+    )
+    parser.add_argument(
+        "--foot-ground-clearance",
+        type=float,
+        default=0.002,
+        help="Target minimum support clearance above ground in meters for saved motion.",
     )
     
     args = parser.parse_args()
@@ -244,6 +273,17 @@ if __name__ == "__main__":
             "local_body_pos": local_body_pos,
             "link_body_list": body_names,
         }
+        if args.foot_ground_align:
+            # 注意：这里只在“保存 pkl”时做后处理，不会影响前面的 viewer 回放。
+            # 这样方便你先看原始 retarget 效果，再决定是否对训练数据做 grounding 修复。
+            motion_data, grounding_stats = align_motion_root_to_ground(
+                motion_data=motion_data,
+                model_or_path=retargeter.xml_file,
+                clearance=args.foot_ground_clearance,
+                mode=args.foot_ground_mode,
+                inplace=False,
+            )
+            print("[foot_ground_align]", grounding_stats)
         with open(args.save_path, "wb") as f:
             pickle.dump(motion_data, f)
         print(f"Saved to {args.save_path}")

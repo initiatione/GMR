@@ -54,3 +54,34 @@
 - 在 `scripts/bvh_to_robot.py` 新增 `--auto_ground_margin`（默认 `0.0m`），用于控制自动贴地时的地面净空
 - 自动贴地流程会打印 `min_z`、`margin`、`applied_ground_offset`，便于复现实验与排查脚部悬空/穿地问题
 - 已通过 `python -m py_compile scripts/bvh_to_robot.py` 语法校验
+
+## 2026-04-17
+
+- 新增 `general_motion_retargeting/motion_grounding.py`，提供基于 MuJoCo 真实支撑碰撞几何的离线 grounding 工具；不再仅凭 `root_pos[:, 2]` 判断是否贴地，而是逐帧 forward 后计算脚/踝/趾等支撑 geom 的世界坐标最低点
+- 新增 `scripts/ground_robot_motion.py`，可对已导出的机器人动作 `pkl` 做离线贴地修复；支持：
+  - `--robot` / `--robot_xml` 指定 MuJoCo 模型
+  - `--mode per_frame|global` 选择逐帧修复或整段统一上抬
+  - `--clearance` 指定目标最小离地净空
+- 在 `scripts/bvh_to_robot.py`、`scripts/smplx_to_robot.py`、`scripts/gvhmr_to_robot.py` 中新增显式导出后处理开关：
+  - `--foot-ground-align`
+  - `--foot-ground-mode`
+  - `--foot-ground-clearance`
+- 上述 grounding 开关默认关闭，不会无提示地强制修改导出轨迹；只有用户显式传入 `--foot-ground-align` 时，才会对保存的 `pkl` 做贴地修复
+- grounding 后处理当前只修改 `root_pos[:, 2]`，不修改关节角；适合作为数据清洗/导出修复步骤，而不是完整的接触一致性求解器
+- 已为 grounding 相关脚本补充详细中文注释，重点说明：
+  - 为什么要按真实支撑碰撞几何而不是按 `root_z` 做贴地判断
+  - `sphere / box / capsule / cylinder / ellipsoid` 的最低点近似是如何计算的
+  - `per_frame` 与 `global` 两种模式对训练分布和竖直轨迹的影响差异
+- 新增回归测试 `tests/test_motion_grounding.py`，覆盖：
+  - `compute_support_min_z` 的 box 几何最低点计算
+  - `per_frame` 模式消除穿地
+  - `global` 模式使用统一上抬量
+- 已通过 `python -m pytest tests/test_motion_grounding.py --basetemp D:\human_robot\.pytest_tmp` 验证测试通过
+- 已通过 `python -m py_compile general_motion_retargeting/motion_grounding.py scripts/ground_robot_motion.py scripts/bvh_to_robot.py scripts/smplx_to_robot.py scripts/gvhmr_to_robot.py tests/test_motion_grounding.py` 语法校验
+- 已在 `D:\human_robot\tmp_compare\lafan1\retarget_t800\fight1_subject2.pkl` 上验证离线 grounding：
+  - 输出文件：`D:\human_robot\tmp_compare\lafan1\retarget_t800\fight1_subject2_grounded.pkl`
+  - 支撑碰撞体数量：`4`
+  - 修复前 `before_min_support_z = -0.218195m`
+  - 修复前穿地帧数：`7114 / 7346`
+  - 使用 `per_frame` 模式与 `0.002m` 净空后，修复后 `after_min_support_z = 0.002000m`
+  - 修复后穿地帧数：`0`
