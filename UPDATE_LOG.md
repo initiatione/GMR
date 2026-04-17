@@ -137,3 +137,12 @@
   - `--contact-aware-postprocess --contact-profile balanced`
   - 如需更保守的修复，可改用 `--contact-profile conservative`
 - expert override 仍然保留，但不再作为默认推荐入口，避免日常使用时暴露过多阈值开关
+- 按“保留上游主 README 风格”的原则再次收口文档：
+  - 将主 `README.md` 中的离线修复详解替换为一条最小链接
+  - 新增独立中文说明文档 `docs/offline-fix/README.md`
+- 新文档集中说明：
+  - grounding 与 contact-aware 两条离线修复链
+  - 推荐命令与三档 `contact-profile`
+  - expert override 的使用边界
+  - 当前对已注册机器人资产的静态适配性盘点
+  - 当前方法仍然属于运动学后处理而非动力学优化

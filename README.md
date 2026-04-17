@@ -235,36 +235,7 @@ Each frame of **robot motion data** can be understood as a tuple of (robot_base_
 
 ### Local Contact-Aware Export Cleanup
 
-If your exported robot PKL has visible foot penetration, slight floating, or support-foot sliding, you can keep the original GMR pipeline unchanged and enable the optional contact-aware postprocess only at export time.
-
-Recommended default:
-
-```bash
-python scripts/bvh_to_robot.py \
-  --bvh_file /path/to/your_motion.bvh \
-  --robot t800 \
-  --save_path /path/to/output.pkl \
-  --contact-aware-postprocess \
-  --contact-profile balanced
-```
-
-More conservative cleanup:
-
-```bash
-python scripts/bvh_to_robot.py \
-  --bvh_file /path/to/your_motion.bvh \
-  --robot t800 \
-  --save_path /path/to/output.pkl \
-  --contact-aware-postprocess \
-  --contact-profile conservative
-```
-
-Notes:
-- `balanced` is the recommended default and matches the current tuned default behavior.
-- `conservative` modifies the trajectory less aggressively.
-- `aggressive` is available for sequences with more obvious penetration / floating issues.
-- Expert overrides still exist (for example stance thresholds or smoothing window), but most users should start with `--contact-profile balanced`.
-- The contact-aware postprocess is still a kinematic cleanup stage; it does not turn the pipeline into a full kinodynamic optimizer.
+For the local offline cleanup workflow, recommended commands, compatibility notes, and Chinese documentation, see [Offline Cleanup Guide (中文)](./docs/offline-fix/README.md).
 
 ### [NEW] PICO Streaming to Robot (TWIST2)
 
