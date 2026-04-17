@@ -85,3 +85,55 @@
   - 修复前穿地帧数：`7114 / 7346`
   - 使用 `per_frame` 模式与 `0.002m` 净空后，修复后 `after_min_support_z = 0.002000m`
   - 修复后穿地帧数：`0`
+- 新增 `general_motion_retargeting/motion_contact_postprocess.py`，提供一个默认关闭的 contact-aware 导出后处理管线：
+  - 基于真实 support geoms 估计左右脚 `stance phase`
+  - 在 stance 段里仅通过平移 `root_pos[:, :2]` 做支撑脚 XY 锁地，尽量减少 foot sliding
+  - 使用真实 support geoms 做 grounding
+  - 对 `root_z` 修正量做轻量移动平均平滑，并在平滑后再次 grounding，避免重新引入穿地
+- 在 `scripts/bvh_to_robot.py`、`scripts/smplx_to_robot.py`、`scripts/gvhmr_to_robot.py` 中新增显式总开关 `--contact-aware-postprocess`
+- 新增 contact-aware 相关参数：
+  - `--contact-stance-height-threshold`
+  - `--contact-stance-speed-threshold`
+  - `--contact-stance-min-frames`
+  - `--contact-ground-mode`
+  - `--contact-ground-clearance`
+  - `--contact-root-z-smoothing-window`
+- 新增回归测试 `tests/test_motion_contact_postprocess.py`，覆盖：
+  - stance 段中的支撑脚 XY 锁地
+  - contact-aware 后处理后不再穿地
+  - `root_z` 平滑后再次 grounding 的基本正确性
+- 已通过 `python -m pytest tests/test_motion_grounding.py tests/test_motion_contact_postprocess.py --basetemp D:\human_robot\.pytest_tmp` 验证共 `5` 个测试通过
+- 已通过 `python -m py_compile general_motion_retargeting/motion_contact_postprocess.py scripts/bvh_to_robot.py scripts/smplx_to_robot.py scripts/gvhmr_to_robot.py tests/test_motion_contact_postprocess.py` 语法校验
+- 已在真实 `t800` 动作 `D:\human_robot\GMR\retarget_t800\lafan1\fight1_subject3.pkl` 上验证 contact-aware 后处理：
+  - `stance_left = 2421`
+  - `stance_right = 2581`
+  - `max_xy_lock_shift = 0.063041m`
+  - `after_min_support_z = 0.002000m`
+  - `after_penetrating_frames = 0`
+- 进一步按 code-review 结果做了两处稳定性优化：
+  - `general_motion_retargeting/motion_contact_postprocess.py` 中的左右脚 support geom 分组不再仅依赖 `left/right` 命名；当命名信息不足时，会退化到按默认站立姿态下 geom 的世界 `y` 坐标分组
+  - 双支撑帧中的支撑脚 XY 锁地不再使用左右脚简单平均，而是按“更低且更慢”的 stance 置信度加权，减少两只脚在双支撑时互相拉扯
+- 新增 `double_stance_frames` 统计，便于分析 contact-aware 后处理在双支撑段上的作用范围
+- 已新增测试覆盖“左右侧命名不明确但默认位姿可分左右”的分组兜底场景
+- 本轮优化后再次通过 `python -m pytest tests/test_motion_grounding.py tests/test_motion_contact_postprocess.py --basetemp D:\human_robot\.pytest_tmp`，共 `6` 个测试通过
+- 本轮优化后再次在 `D:\human_robot\GMR\retarget_t800\lafan1\fight1_subject3.pkl` 上验证：
+  - `double_stance = 929`
+  - `after_min_support_z = 0.002000m`
+  - `after_penetrating_frames = 0`
+- 进一步收敛了 contact-aware 接口，新增 `--contact-profile {conservative|balanced|aggressive}` 三档预设：
+  - `balanced` 保持与此前默认参数一致，不改变当前默认修正风格
+  - `conservative` 更保守，尽量少改轨迹
+  - `aggressive` 更积极，适合坏数据更明显的序列
+- 原有细粒度参数未删除，改为 expert override：
+  - `--contact-stance-height-threshold`
+  - `--contact-stance-speed-threshold`
+  - `--contact-stance-min-frames`
+  - `--contact-ground-mode`
+  - `--contact-ground-clearance`
+  - `--contact-root-z-smoothing-window`
+- 新增 `build_contact_aware_config(...)` 统一从 profile + overrides 构建配置，避免三份导出脚本各自维护默认值
+- 已在 `README.md` 新增 `Local Contact-Aware Export Cleanup` 小节，补充本地导出训练 `pkl` 时的最短推荐命令
+- 当前推荐用法已收敛为：
+  - `--contact-aware-postprocess --contact-profile balanced`
+  - 如需更保守的修复，可改用 `--contact-profile conservative`
+- expert override 仍然保留，但不再作为默认推荐入口，避免日常使用时暴露过多阈值开关

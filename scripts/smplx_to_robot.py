@@ -7,6 +7,7 @@ import numpy as np
 
 from general_motion_retargeting import GeneralMotionRetargeting as GMR
 from general_motion_retargeting import RobotMotionViewer
+from general_motion_retargeting.motion_contact_postprocess import apply_contact_aware_postprocess, build_contact_aware_config
 from general_motion_retargeting.motion_grounding import align_motion_root_to_ground
 from general_motion_retargeting.utils.smpl import load_smplx_file, get_smplx_data_offline_fast
 
@@ -84,6 +85,55 @@ if __name__ == "__main__":
         type=float,
         default=0.002,
         help="Target minimum support clearance above ground in meters for saved motion.",
+    )
+    parser.add_argument(
+        "--contact-aware-postprocess",
+        action="store_true",
+        default=False,
+        help="Apply stance detection, stance-foot XY lock, support-geom grounding, and root_z smoothing to the saved PKL.",
+    )
+    parser.add_argument(
+        "--contact-profile",
+        choices=["conservative", "balanced", "aggressive"],
+        default="balanced",
+        # profile 是面对日常使用者的主入口；下面那些 threshold/window 参数只保留给 expert 调参。
+        help="Preset strength for contact-aware postprocess. Expert flags below can still override individual thresholds.",
+    )
+    parser.add_argument(
+        "--contact-stance-height-threshold",
+        type=float,
+        default=None,
+        help="Expert override: frames with support min_z below this threshold can be treated as stance candidates.",
+    )
+    parser.add_argument(
+        "--contact-stance-speed-threshold",
+        type=float,
+        default=None,
+        help="Expert override: maximum planar foot speed (m/s) for stance detection.",
+    )
+    parser.add_argument(
+        "--contact-stance-min-frames",
+        type=int,
+        default=None,
+        help="Expert override: minimum segment length to keep a stance phase.",
+    )
+    parser.add_argument(
+        "--contact-ground-mode",
+        choices=["per_frame", "global"],
+        default=None,
+        help="Expert override: grounding mode used inside the contact-aware postprocess.",
+    )
+    parser.add_argument(
+        "--contact-ground-clearance",
+        type=float,
+        default=None,
+        help="Expert override: target minimum support clearance above ground in meters inside the contact-aware postprocess.",
+    )
+    parser.add_argument(
+        "--contact-root-z-smoothing-window",
+        type=int,
+        default=None,
+        help="Expert override: moving-average window used to smooth root_z correction inside the contact-aware postprocess.",
     )
 
     args = parser.parse_args()
@@ -186,7 +236,25 @@ if __name__ == "__main__":
             "local_body_pos": local_body_pos,
             "link_body_list": body_names,
         }
-        if args.foot_ground_align:
+        if args.contact_aware_postprocess:
+            # 和 BVH 导出保持一致：profile 先给出一套稳定默认值，必要时再被 expert override 覆盖。
+            motion_data, contact_stats = apply_contact_aware_postprocess(
+                motion_data=motion_data,
+                model_or_path=retarget.xml_file,
+                config=build_contact_aware_config(
+                    profile=args.contact_profile,
+                    stance_height_threshold=args.contact_stance_height_threshold,
+                    stance_speed_threshold=args.contact_stance_speed_threshold,
+                    stance_min_frames=args.contact_stance_min_frames,
+                    ground_clearance=args.contact_ground_clearance,
+                    ground_mode=args.contact_ground_mode,
+                    root_z_smoothing_window=args.contact_root_z_smoothing_window,
+                ),
+                inplace=False,
+            )
+            print("[contact_aware_postprocess]", contact_stats)
+        elif args.foot_ground_align:
+            # 旧接口仍保留，用于只想做最小 grounding 修复的场景。
             # 这是导出阶段的显式后处理，不参与 IK 本身。
             motion_data, grounding_stats = align_motion_root_to_ground(
                 motion_data=motion_data,

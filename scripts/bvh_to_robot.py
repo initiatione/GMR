@@ -3,6 +3,7 @@ import pathlib
 import time
 from general_motion_retargeting import GeneralMotionRetargeting as GMR
 from general_motion_retargeting import RobotMotionViewer
+from general_motion_retargeting.motion_contact_postprocess import apply_contact_aware_postprocess, build_contact_aware_config
 from general_motion_retargeting.motion_grounding import align_motion_root_to_ground
 from general_motion_retargeting.utils.lafan1 import load_bvh_file
 from rich import print
@@ -151,6 +152,56 @@ if __name__ == "__main__":
         default=0.002,
         help="Target minimum support clearance above ground in meters for saved motion.",
     )
+    parser.add_argument(
+        "--contact-aware-postprocess",
+        action="store_true",
+        default=False,
+        help="Apply stance detection, stance-foot XY lock, support-geom grounding, and root_z smoothing to the saved PKL.",
+    )
+    parser.add_argument(
+        "--contact-profile",
+        choices=["conservative", "balanced", "aggressive"],
+        default="balanced",
+        # 这里把日常使用入口收敛成一个 profile。
+        # 绝大多数情况下先选档位即可，不需要直接面对一串阈值。
+        help="Preset strength for contact-aware postprocess. Expert flags below can still override individual thresholds.",
+    )
+    parser.add_argument(
+        "--contact-stance-height-threshold",
+        type=float,
+        default=None,
+        help="Expert override: frames with support min_z below this threshold can be treated as stance candidates.",
+    )
+    parser.add_argument(
+        "--contact-stance-speed-threshold",
+        type=float,
+        default=None,
+        help="Expert override: maximum planar foot speed (m/s) for stance detection.",
+    )
+    parser.add_argument(
+        "--contact-stance-min-frames",
+        type=int,
+        default=None,
+        help="Expert override: minimum segment length to keep a stance phase.",
+    )
+    parser.add_argument(
+        "--contact-ground-mode",
+        choices=["per_frame", "global"],
+        default=None,
+        help="Expert override: grounding mode used inside the contact-aware postprocess.",
+    )
+    parser.add_argument(
+        "--contact-ground-clearance",
+        type=float,
+        default=None,
+        help="Expert override: target minimum support clearance above ground in meters inside the contact-aware postprocess.",
+    )
+    parser.add_argument(
+        "--contact-root-z-smoothing-window",
+        type=int,
+        default=None,
+        help="Expert override: moving-average window used to smooth root_z correction inside the contact-aware postprocess.",
+    )
     
     args = parser.parse_args()
     
@@ -273,7 +324,26 @@ if __name__ == "__main__":
             "local_body_pos": local_body_pos,
             "link_body_list": body_names,
         }
-        if args.foot_ground_align:
+        if args.contact_aware_postprocess:
+            # 新的推荐路径：
+            # 先通过 profile 生成一组稳定的默认参数，再允许用户用 expert flags 覆盖单项阈值。
+            motion_data, contact_stats = apply_contact_aware_postprocess(
+                motion_data=motion_data,
+                model_or_path=retargeter.xml_file,
+                config=build_contact_aware_config(
+                    profile=args.contact_profile,
+                    stance_height_threshold=args.contact_stance_height_threshold,
+                    stance_speed_threshold=args.contact_stance_speed_threshold,
+                    stance_min_frames=args.contact_stance_min_frames,
+                    ground_clearance=args.contact_ground_clearance,
+                    ground_mode=args.contact_ground_mode,
+                    root_z_smoothing_window=args.contact_root_z_smoothing_window,
+                ),
+                inplace=False,
+            )
+            print("[contact_aware_postprocess]", contact_stats)
+        elif args.foot_ground_align:
+            # 兼容旧路径：只做 grounding，不做 stance 检测 / 锁脚 / root_z 平滑。
             # 注意：这里只在“保存 pkl”时做后处理，不会影响前面的 viewer 回放。
             # 这样方便你先看原始 retarget 效果，再决定是否对训练数据做 grounding 修复。
             motion_data, grounding_stats = align_motion_root_to_ground(
