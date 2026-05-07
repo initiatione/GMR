@@ -1,5 +1,28 @@
 # 更新日志
 
+## 2026-05-08
+
+- 新增官方比赛 BVH 的独立重定向路线：`src_human="bvh_human_robot_hit"`，并在 `params.py` 注册 `bvh_human_robot_hit -> t800/t800_transparent` 到 `ik_configs/bvh_human_robot_hit_to_t800.json`。
+- `scripts/bvh_to_robot.py` 新增：
+  - `--source_profile human_robot_hit`，让官方 BVH 不再伪装成普通 LAFAN1 IK route。
+  - `--headless`，用于本地/云端无 viewer 批量导出。
+  - `--frame_start/--frame_end/--frame_step`，用于短窗口诊断。
+  - `--disable_ik_safety_break`，用于完整导出高能动作时让 limit constraint 接管临时限位压力。
+  - 保存 pkl 时补齐 `dof_vel/root_lin_vel/root_ang_vel` 字段。
+- `lafan1.py` / `bvh_profile_adapter.py` 新增 official BVH 单位估计：当 `human_robot_hit` raw skeleton height 约 57 raw units 时，使用 `unit_divisor=39.37` 转米，避免 `/100` 导致人体尺度过小。
+- `motion_retarget.py` 支持 `ik_safety_break` 传入 Mink，并通过 `retarget_config.py` 保留 zero-weight offset carrier，便于 official IK 配置禁用不可信 orientation 权重但仍携带 offset。
+- 新增诊断脚本：
+  - `scripts/analyze_bvh_source_motion.py`
+  - `scripts/summarize_gmr_debug_log.py`
+  - `scripts/probe_official_unit_scale.py`
+  - `scripts/probe_official_weight_variants.py`
+- 已重新全量导出官方动作：
+  - `retarget_t800/official/zhiquan_quanji_001_raw.pkl`，2828 frames，120 fps，25 dof，score `89.70`，verdict `usable`
+  - `retarget_t800/official/540huixuantitui_001_raw.pkl`，3920 frames，120 fps，25 dof，score `90.69`，verdict `good`
+- 验证：
+  - `conda run -n robot python -m py_compile scripts\bvh_to_robot.py general_motion_retargeting\utils\lafan1.py general_motion_retargeting\utils\bvh_profile_adapter.py general_motion_retargeting\motion_retarget.py general_motion_retargeting\retarget_config.py general_motion_retargeting\motion_retarget_options.py scripts\analyze_bvh_source_motion.py scripts\summarize_gmr_debug_log.py scripts\probe_official_unit_scale.py scripts\probe_official_weight_variants.py`
+  - `python -m pytest tests\test_bvh_to_robot_cli_helpers.py tests\test_official_ik_config.py tests\test_bvh_profile_units.py tests\test_official_bvh_diagnostics.py tests\test_motion_grounding.py tests\test_motion_contact_postprocess.py -q --basetemp D:\human_robot\.pytest_tmp\gmr`
+
 ## 2026-04-13
 
 - 目标环境：`conda robot`

@@ -5,6 +5,7 @@ import general_motion_retargeting.utils.lafan_vendor.utils as utils
 from general_motion_retargeting.utils.lafan_vendor.extract import read_bvh
 from general_motion_retargeting.utils.bvh_profile_adapter import (
     adapt_frame_for_gmr,
+    detect_bvh_unit_divisor_from_anim,
     estimate_human_height_from_frames,
     inspect_bvh_profile,
     read_bvh_with_joint_orders,
@@ -36,13 +37,24 @@ def load_bvh_file(bvh_file, format="lafan1"):
 
     rotation_matrix = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
     rotation_quat = R.from_matrix(rotation_matrix).as_quat(scalar_first=True)
+    unit_divisor, raw_height = detect_bvh_unit_divisor_from_anim(
+        data,
+        bvh_profile["detected_profile"],
+        rotation_matrix,
+    )
+    if bvh_profile["detected_profile"] == "human_robot_hit":
+        print(
+            "[BVH adapter] "
+            f"profile=human_robot_hit raw_height={raw_height:.3f} "
+            f"unit_divisor={unit_divisor:.2f}"
+        )
 
     frames = []
     for frame in range(data.pos.shape[0]):
         result = {}
         for i, bone in enumerate(data.bones):
             orientation = utils.quat_mul(rotation_quat, global_data[0][frame, i])
-            position = global_data[1][frame, i] @ rotation_matrix.T / 100  # cm to m
+            position = global_data[1][frame, i] @ rotation_matrix.T / unit_divisor
             result[bone] = [position, orientation]
 
         # 这里把“项目 BVH 的骨架语义”适配成 GMR 更熟悉的 LAFAN1 主体骨架语义。

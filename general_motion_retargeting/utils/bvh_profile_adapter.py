@@ -341,6 +341,57 @@ def read_bvh_with_joint_orders(bvh_file: str | Path, start: int | None = None, e
     )
 
 
+def estimate_height_from_raw_global_positions(positions_by_body: dict[str, np.ndarray]) -> float | None:
+    """Estimate source skeleton height in raw BVH units before meter conversion."""
+
+    if "Head" not in positions_by_body:
+        return None
+
+    foot_series = [
+        positions_by_body[foot_name][:, 2]
+        for foot_name in ["LeftFoot", "RightFoot", "LeftToe", "RightToe", "LeftToeBase", "RightToeBase"]
+        if foot_name in positions_by_body
+    ]
+    if not foot_series:
+        return None
+
+    head_z = np.asarray(positions_by_body["Head"][:, 2], dtype=np.float64)
+    foot_z = np.min(np.vstack(foot_series), axis=0)
+    return float(np.percentile(head_z, 95) - np.percentile(foot_z, 5))
+
+
+def detect_bvh_unit_divisor(raw_height: float | None, detected_profile: str) -> float:
+    """Choose the raw-BVH-unit divisor used to convert global positions to meters.
+
+    Standard LAFAN1 files in this workspace are centimeter-scale. The official
+    `human_robot_hit` BVH files use a much smaller raw skeleton height (~57);
+    treating those values as inches puts the root/body heights in the same
+    physical range as the official 40-column NPY examples and LAFAN1 retargets.
+    """
+
+    if detected_profile == "human_robot_hit" and raw_height is not None:
+        inch_height_m = raw_height / 39.37
+        cm_height_m = raw_height / 100.0
+        if 1.2 <= inch_height_m <= 2.2 and cm_height_m < 1.0:
+            return 39.37
+
+    return 100.0
+
+
+def detect_bvh_unit_divisor_from_anim(data: Anim, detected_profile: str, rotation_matrix: np.ndarray) -> tuple[float, float | None]:
+    """Estimate BVH raw-unit scale from a short FK pass."""
+
+    sample_end = min(200, data.pos.shape[0])
+    global_data = utils.quat_fk(data.quats[:sample_end], data.pos[:sample_end], data.parents)
+
+    positions_by_body = {}
+    for joint_index, bone in enumerate(data.bones):
+        positions_by_body[bone] = global_data[1][:sample_end, joint_index] @ rotation_matrix.T
+
+    raw_height = estimate_height_from_raw_global_positions(positions_by_body)
+    return detect_bvh_unit_divisor(raw_height, detected_profile), raw_height
+
+
 def adapt_frame_for_gmr(frame_data: dict, detected_profile: str) -> dict:
     """把项目 BVH 的语义对齐到 GMR 默认使用的 LAFAN1 主体骨架。"""
 

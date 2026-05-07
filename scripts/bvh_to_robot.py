@@ -1,15 +1,85 @@
 import argparse
 import pathlib
 import time
+import sys
+
+SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from general_motion_retargeting import GeneralMotionRetargeting as GMR
 from general_motion_retargeting import RobotMotionViewer
 from general_motion_retargeting.motion_contact_postprocess import apply_contact_aware_postprocess, build_contact_aware_config
 from general_motion_retargeting.motion_grounding import align_motion_root_to_ground
+from general_motion_retargeting.motion_retarget_options import resolve_ik_safety_break
 from general_motion_retargeting.utils.lafan1 import load_bvh_file
 from rich import print
 from tqdm import tqdm
 import os
 import numpy as np
+
+
+def slice_motion_frames(motion_frames, frame_start=0, frame_end=None, frame_step=1):
+    frame_count = len(motion_frames)
+    frame_start = int(frame_start)
+    frame_step = int(frame_step)
+    frame_end = frame_count if frame_end is None else int(frame_end)
+
+    if frame_step <= 0:
+        raise ValueError("--frame_step must be greater than 0.")
+    if frame_start < 0:
+        raise ValueError("--frame_start must be greater than or equal to 0.")
+    if frame_end > frame_count:
+        raise ValueError(
+            f"--frame_end ({frame_end}) exceeds loaded frame count ({frame_count})."
+        )
+    if frame_start >= frame_end:
+        raise ValueError(
+            f"--frame_start ({frame_start}) must be smaller than --frame_end ({frame_end})."
+        )
+
+    return motion_frames[frame_start:frame_end:frame_step]
+
+
+def maybe_step_viewer(viewer, qpos, human_motion_data, rate_limit):
+    if viewer is None:
+        return
+    viewer.step(
+        root_pos=qpos[:3],
+        root_rot=qpos[3:7],
+        dof_pos=qpos[7:],
+        human_motion_data=human_motion_data,
+        rate_limit=rate_limit,
+        follow_camera=True,
+    )
+
+
+def build_motion_data_from_qpos_list(qpos_list, motion_fps):
+    root_pos = np.array([qpos[:3] for qpos in qpos_list])
+    # save from wxyz to xyzw
+    root_rot = np.array([qpos[3:7][[1, 2, 3, 0]] for qpos in qpos_list])
+    dof_pos = np.array([qpos[7:] for qpos in qpos_list])
+    if len(qpos_list) >= 2 and motion_fps > 0:
+        dt = 1.0 / float(motion_fps)
+        root_lin_vel = np.gradient(root_pos, dt, axis=0)
+        dof_vel = np.gradient(dof_pos, dt, axis=0)
+    else:
+        root_lin_vel = np.zeros_like(root_pos)
+        dof_vel = np.zeros_like(dof_pos)
+    root_ang_vel = np.zeros_like(root_pos)
+    return {
+        "fps": motion_fps,
+        "root_pos": root_pos,
+        "root_rot": root_rot,
+        "dof_pos": dof_pos,
+        "dof_vel": dof_vel,
+        "root_lin_vel": root_lin_vel,
+        "root_ang_vel": root_ang_vel,
+        "local_body_pos": None,
+        "link_body_list": None,
+    }
+
 
 def estimate_ground_offset(retargeter: GMR, motion_frames):
     """Estimate a source-side global z offset from the human motion itself.
@@ -58,6 +128,13 @@ if __name__ == "__main__":
         choices=["lafan1", "nokov"],
         default="lafan1",
     )
+
+    parser.add_argument(
+        "--source_profile",
+        choices=["auto", "lafan1", "human_robot_hit", "nokov"],
+        default="auto",
+        help="Explicit GMR BVH source profile. Use human_robot_hit for official competition BVH files.",
+    )
     
     parser.add_argument(
         "--loop",
@@ -80,6 +157,23 @@ if __name__ == "__main__":
         "--record_video",
         action="store_true",
         default=False,
+    )
+
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        default=False,
+        help="Run retargeting without launching the interactive MuJoCo viewer.",
+    )
+
+    parser.add_argument(
+        "--disable_ik_safety_break",
+        action="store_true",
+        default=False,
+        help=(
+            "Let Mink's configuration-limit constraint handle temporary limit pressure "
+            "instead of raising before solve_ik. Useful for complete high-energy official BVH exports."
+        ),
     )
 
     parser.add_argument(
@@ -132,6 +226,27 @@ if __name__ == "__main__":
         type=int,
         default=1,
         help="调试日志采样间隔。默认每帧都记录；设为 10 表示每 10 帧记录一次。",
+    )
+
+    parser.add_argument(
+        "--frame_start",
+        type=int,
+        default=0,
+        help="Start frame index for diagnostic retargeting windows.",
+    )
+
+    parser.add_argument(
+        "--frame_end",
+        type=int,
+        default=None,
+        help="Exclusive end frame index for diagnostic retargeting windows.",
+    )
+
+    parser.add_argument(
+        "--frame_step",
+        type=int,
+        default=1,
+        help="Frame stride for diagnostic retargeting windows or explicit downsampling.",
     )
 
     parser.add_argument(
@@ -214,15 +329,36 @@ if __name__ == "__main__":
     
     # Load SMPLX trajectory
     lafan1_data_frames, actual_human_height = load_bvh_file(args.bvh_file, format=args.format)
+    original_frame_count = len(lafan1_data_frames)
+    lafan1_data_frames = slice_motion_frames(
+        lafan1_data_frames,
+        frame_start=args.frame_start,
+        frame_end=args.frame_end,
+        frame_step=args.frame_step,
+    )
+    print(
+        "[frame_window] "
+        f"loaded={original_frame_count}, "
+        f"selected={len(lafan1_data_frames)}, "
+        f"start={args.frame_start}, "
+        f"end={original_frame_count if args.frame_end is None else args.frame_end}, "
+        f"step={args.frame_step}"
+    )
     
     
     # Initialize the retargeting system
+    if args.source_profile == "auto":
+        source_profile = args.format
+    else:
+        source_profile = args.source_profile
+
     retargeter = GMR(
-        src_human=f"bvh_{args.format}",
+        src_human=f"bvh_{source_profile}",
         tgt_robot=args.robot,
         actual_human_height=actual_human_height,
         debug_log_path=args.debug_log_path,
         debug_log_every_n=args.debug_log_every_n,
+        ik_safety_break=resolve_ik_safety_break(args.disable_ik_safety_break),
     )
 
     if args.auto_ground:
@@ -240,14 +376,16 @@ if __name__ == "__main__":
 
     motion_fps = args.motion_fps
     
-    robot_motion_viewer = RobotMotionViewer(robot_type=args.robot,
-                                            motion_fps=motion_fps,
-                                            transparent_robot=0,
-                                            record_video=args.record_video,
-                                            video_path=args.video_path,
-                                            # video_width=2080,
-                                            # video_height=1170
-                                            )
+    robot_motion_viewer = None
+    if not args.headless:
+        robot_motion_viewer = RobotMotionViewer(robot_type=args.robot,
+                                                motion_fps=motion_fps,
+                                                transparent_robot=0,
+                                                record_video=args.record_video,
+                                                video_path=args.video_path,
+                                                # video_width=2080,
+                                                # video_height=1170
+                                                )
     
     # FPS measurement variables
     fps_counter = 0
@@ -283,17 +421,16 @@ if __name__ == "__main__":
 
         # retarget
         qpos = retargeter.retarget(smplx_data, frame_index=i)
+        if args.save_path is not None:
+            qpos_list.append(qpos)
         
 
-        # visualize
-        robot_motion_viewer.step(
-            root_pos=qpos[:3],
-            root_rot=qpos[3:7],
-            dof_pos=qpos[7:],
+        # visualize unless running headless diagnostics/export.
+        maybe_step_viewer(
+            viewer=robot_motion_viewer,
+            qpos=qpos,
             human_motion_data=retargeter.scaled_human_data,
             rate_limit=args.rate_limit,
-            follow_camera=True,
-            # human_pos_offset=np.array([0.0, 0.0, 0.0])
         )
 
         if args.loop:
@@ -304,26 +441,9 @@ if __name__ == "__main__":
                 break
    
         
-        if args.save_path is not None:
-            qpos_list.append(qpos)
-    
     if args.save_path is not None:
         import pickle
-        root_pos = np.array([qpos[:3] for qpos in qpos_list])
-        # save from wxyz to xyzw
-        root_rot = np.array([qpos[3:7][[1,2,3,0]] for qpos in qpos_list])
-        dof_pos = np.array([qpos[7:] for qpos in qpos_list])
-        local_body_pos = None
-        body_names = None
-        
-        motion_data = {
-            "fps": motion_fps,
-            "root_pos": root_pos,
-            "root_rot": root_rot,
-            "dof_pos": dof_pos,
-            "local_body_pos": local_body_pos,
-            "link_body_list": body_names,
-        }
+        motion_data = build_motion_data_from_qpos_list(qpos_list, motion_fps)
         if args.contact_aware_postprocess:
             # 新的推荐路径：
             # 先通过 profile 生成一组稳定的默认参数，再允许用户用 expert flags 覆盖单项阈值。
@@ -361,5 +481,6 @@ if __name__ == "__main__":
     # Close progress bar
     pbar.close()
     
-    robot_motion_viewer.close()
+    if robot_motion_viewer is not None:
+        robot_motion_viewer.close()
        

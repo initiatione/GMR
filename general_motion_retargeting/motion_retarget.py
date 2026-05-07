@@ -6,6 +6,7 @@ import json
 import os
 from scipy.spatial.transform import Rotation as R
 from .params import ROBOT_XML_DICT, IK_CONFIG_DICT
+from .retarget_config import iter_retarget_config_entries
 from rich import print
 
 class GeneralMotionRetargeting:
@@ -22,6 +23,7 @@ class GeneralMotionRetargeting:
         use_velocity_limit: bool=False,
         debug_log_path: str | None = None,
         debug_log_every_n: int = 1,
+        ik_safety_break: bool = True,
     ) -> None:
 
         # load the robot model
@@ -94,6 +96,7 @@ class GeneralMotionRetargeting:
         self.damping = damping
         self.tgt_robot = tgt_robot
         self.src_human = src_human
+        self.ik_safety_break = ik_safety_break
 
         self.human_body_to_task1 = {}
         self.human_body_to_task2 = {}
@@ -137,9 +140,12 @@ class GeneralMotionRetargeting:
         self.tasks1 = []
         self.tasks2 = []
         
-        for frame_name, entry in self.ik_match_table1.items():
-            body_name, pos_weight, rot_weight, pos_offset, rot_offset = entry
-            if pos_weight != 0 or rot_weight != 0:
+        for frame_name, body_name, pos_weight, rot_weight, pos_offset, rot_offset, creates_task in iter_retarget_config_entries(self.ik_match_table1):
+            self.pos_offsets1[body_name] = np.array(pos_offset) - self.ground
+            self.rot_offsets1[body_name] = R.from_quat(
+                rot_offset, scalar_first=True
+            )
+            if creates_task:
                 task = mink.FrameTask(
                     frame_name=frame_name,
                     frame_type="body",
@@ -149,16 +155,15 @@ class GeneralMotionRetargeting:
                 )
                 self.human_body_to_task1[body_name] = task
                 self.task1_body_to_frame[body_name] = frame_name
-                self.pos_offsets1[body_name] = np.array(pos_offset) - self.ground
-                self.rot_offsets1[body_name] = R.from_quat(
-                    rot_offset, scalar_first=True
-                )
                 self.tasks1.append(task)
                 self.task_errors1[task] = []
         
-        for frame_name, entry in self.ik_match_table2.items():
-            body_name, pos_weight, rot_weight, pos_offset, rot_offset = entry
-            if pos_weight != 0 or rot_weight != 0:
+        for frame_name, body_name, pos_weight, rot_weight, pos_offset, rot_offset, creates_task in iter_retarget_config_entries(self.ik_match_table2):
+            self.pos_offsets2[body_name] = np.array(pos_offset) - self.ground
+            self.rot_offsets2[body_name] = R.from_quat(
+                rot_offset, scalar_first=True
+            )
+            if creates_task:
                 task = mink.FrameTask(
                     frame_name=frame_name,
                     frame_type="body",
@@ -168,10 +173,6 @@ class GeneralMotionRetargeting:
                 )
                 self.human_body_to_task2[body_name] = task
                 self.task2_body_to_frame[body_name] = frame_name
-                self.pos_offsets2[body_name] = np.array(pos_offset) - self.ground
-                self.rot_offsets2[body_name] = R.from_quat(
-                    rot_offset, scalar_first=True
-                )
                 self.tasks2.append(task)
                 self.task_errors2[task] = []
 
@@ -230,7 +231,13 @@ class GeneralMotionRetargeting:
             initial_error1 = float(curr_error)
             dt = self.configuration.model.opt.timestep
             vel1 = mink.solve_ik(
-                self.configuration, self.tasks1, dt, self.solver, self.damping, self.ik_limits
+                self.configuration,
+                self.tasks1,
+                dt,
+                self.solver,
+                self.damping,
+                safety_break=self.ik_safety_break,
+                limits=self.ik_limits,
             )
             self.configuration.integrate_inplace(vel1, dt)
             next_error = self.error1()
@@ -239,7 +246,13 @@ class GeneralMotionRetargeting:
                 curr_error = next_error
                 dt = self.configuration.model.opt.timestep
                 vel1 = mink.solve_ik(
-                    self.configuration, self.tasks1, dt, self.solver, self.damping, self.ik_limits
+                    self.configuration,
+                    self.tasks1,
+                    dt,
+                    self.solver,
+                    self.damping,
+                    safety_break=self.ik_safety_break,
+                    limits=self.ik_limits,
                 )
                 self.configuration.integrate_inplace(vel1, dt)
                 next_error = self.error1()
@@ -251,7 +264,13 @@ class GeneralMotionRetargeting:
             initial_error2 = float(curr_error)
             dt = self.configuration.model.opt.timestep
             vel2 = mink.solve_ik(
-                self.configuration, self.tasks2, dt, self.solver, self.damping, self.ik_limits
+                self.configuration,
+                self.tasks2,
+                dt,
+                self.solver,
+                self.damping,
+                safety_break=self.ik_safety_break,
+                limits=self.ik_limits,
             )
             self.configuration.integrate_inplace(vel2, dt)
             next_error = self.error2()
@@ -261,7 +280,13 @@ class GeneralMotionRetargeting:
                 # Solve the IK problem with the second task
                 dt = self.configuration.model.opt.timestep
                 vel2 = mink.solve_ik(
-                    self.configuration, self.tasks2, dt, self.solver, self.damping, self.ik_limits
+                    self.configuration,
+                    self.tasks2,
+                    dt,
+                    self.solver,
+                    self.damping,
+                    safety_break=self.ik_safety_break,
+                    limits=self.ik_limits,
                 )
                 self.configuration.integrate_inplace(vel2, dt)
                 
