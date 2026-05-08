@@ -24,32 +24,6 @@ MILD_TWO_STAGE_OFFICIAL_CONFIG = (
 )
 
 
-def test_official_human_robot_hit_config_disables_untrusted_non_root_orientations() -> None:
-    config = json.loads(IK_CONFIG_DICT["bvh_human_robot_hit"]["t800"].read_text(encoding="utf-8"))
-    orientation_disabled_bodies = {
-        "Spine2",
-        "Head",
-        "LeftUpLeg",
-        "RightUpLeg",
-        "LeftLeg",
-        "RightLeg",
-        "LeftFootMod",
-        "RightFootMod",
-        "LeftArm",
-        "RightArm",
-        "LeftForeArm",
-        "RightForeArm",
-        "LeftHand",
-        "RightHand",
-    }
-
-    for table_name in ["ik_match_table1", "ik_match_table2"]:
-        for entry in config[table_name].values():
-            body_name = entry[0]
-            if body_name in orientation_disabled_bodies:
-                assert entry[2] == 0, f"{table_name}:{body_name} should be position-driven for official BVH"
-
-
 def test_official_human_robot_hit_config_uses_calibrated_root_orientation_guide() -> None:
     config = json.loads(IK_CONFIG_DICT["bvh_human_robot_hit"]["t800"].read_text(encoding="utf-8"))
 
@@ -167,12 +141,21 @@ def test_upperbody_core_candidate_alias_uses_dedicated_config_and_transparent_t8
         assert ROBOT_XML_DICT[robot_name].name == "t800_full_gmr_transparent.xml"
 
 
-def test_mild_two_stage_transparent_alias_is_primary_official_visual_route() -> None:
+def test_mild_two_stage_aliases_are_primary_official_routes() -> None:
+    from general_motion_retargeting.params import ROBOT_XML_DICT
+
+    assert (
+        IK_CONFIG_DICT["bvh_human_robot_hit"]["t800"].name
+        == "bvh_human_robot_hit_to_t800--mild_two_stage.json"
+    )
     assert (
         IK_CONFIG_DICT["bvh_human_robot_hit"]["t800_transparent"].name
         == "bvh_human_robot_hit_to_t800--mild_two_stage.json"
     )
+    assert IK_CONFIG_DICT["bvh_human_robot_hit"]["t800"].exists()
     assert IK_CONFIG_DICT["bvh_human_robot_hit"]["t800_transparent"].exists()
+    assert ROBOT_XML_DICT["t800"].name == "t800_full_gmr.xml"
+    assert ROBOT_XML_DICT["t800_transparent"].name == "t800_full_gmr_transparent.xml"
 
 
 def test_mild_two_stage_config_has_runtime_required_metadata() -> None:

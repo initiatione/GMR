@@ -51,10 +51,10 @@ def test_slice_motion_frames_rejects_invalid_ranges(
         slice_motion_frames(frames, frame_start=frame_start, frame_end=frame_end, frame_step=frame_step)
 
 
-def test_human_robot_hit_t800_uses_distinct_official_ik_config() -> None:
+def test_human_robot_hit_t800_uses_promoted_official_ik_config() -> None:
     config_path = IK_CONFIG_DICT["bvh_human_robot_hit"]["t800"]
 
-    assert config_path.name == "bvh_human_robot_hit_to_t800.json"
+    assert config_path.name == "bvh_human_robot_hit_to_t800--mild_two_stage.json"
 
 
 def test_maybe_step_viewer_skips_when_viewer_is_none() -> None:

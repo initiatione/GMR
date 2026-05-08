@@ -2,7 +2,7 @@
 
 ## 2026-05-09
 
-- 最终官方 BVH -> T800 视觉检测命令统一使用当前主 route `--robot t800_transparent`，即已推广的 `mild_two_stage` 配置；不要再用旧的 `--robot t800` 做最后验收。
+- 官方 BVH -> T800 的正式 route `--robot t800` 已切换为当前推广的 `bvh_human_robot_hit_to_t800--mild_two_stage.json`；`--robot t800_transparent` 继续共享同一份 IK config，但只作为透明 MuJoCo XML 的调 IK/视觉排查入口。
 - 调试 JSONL 输出位置整理到 GMR 项目内的 `debug_logs/official/`，例如 `debug_logs\official\official_zhiquan_full_raw_debug_sampled.jsonl`；该目录已加入 `.gitignore`，避免大体积本机日志误提交。
 
 ## 2026-05-08

@@ -70,8 +70,7 @@ IK_CONFIG_DICT = {
         # Official competition BVH profile: 60 joints, ToeBase, Spine3/Neck1, fingers,
         # and mixed per-joint rotation orders. Start from the mature T800 manual config
         # but keep it registered as a distinct route so tuning does not hide under LAFAN1.
-        "t800": IK_CONFIG_ROOT / "bvh_human_robot_hit_to_t800.json",
-        #"t800_transparent": IK_CONFIG_ROOT / "bvh_human_robot_hit_to_t800.json",
+        "t800": IK_CONFIG_ROOT / "bvh_human_robot_hit_to_t800--mild_two_stage.json",
         "t800_transparent": IK_CONFIG_ROOT / "bvh_human_robot_hit_to_t800--mild_two_stage.json",
         "t800_transparent_manual": IK_CONFIG_ROOT / "bvh_human_robot_hit_to_t800--manual.json",
         "t800_transparent_upperbody_core_candidate": IK_CONFIG_ROOT / "bvh_human_robot_hit_to_t800--manual_upperbody_core_candidate.json",
