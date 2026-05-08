@@ -152,7 +152,7 @@ if __name__ == "__main__":
         # 这里把 T800 也接入到 BVH retarget 入口。
         # 这样在命令行里就可以直接使用 `--robot t800` 或 `--robot t800_transparent`
         # 走完整的 GMR BVH 重定向流程。
-        choices=["unitree_g1", "unitree_g1_with_hands", "booster_t1", "stanford_toddy", "fourier_n1", "engineai_pm01", "pal_talos", "t800", "t800_transparent"],
+        choices=["unitree_g1", "unitree_g1_with_hands", "booster_t1", "stanford_toddy", "fourier_n1", "engineai_pm01", "pal_talos", "t800", "t800_transparent", "t800_transparent_upperbody_core_candidate"],
         default="unitree_g1",
     )
     

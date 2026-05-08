@@ -28,6 +28,7 @@ ROBOT_XML_DICT = {
     "t800": ASSET_ROOT / "t800" / "mujoco" / "t800_full_gmr.xml",
     # 透明版 T800 模型，主要用于调试 IK 配置时查看骨骼结构和坐标轴方向。
     "t800_transparent": ASSET_ROOT / "t800" / "mujoco" / "t800_full_gmr_transparent.xml",
+    "t800_transparent_upperbody_core_candidate": ASSET_ROOT / "t800" / "mujoco" / "t800_full_gmr_transparent.xml",
 }
 
 IK_CONFIG_DICT = {
@@ -71,6 +72,7 @@ IK_CONFIG_DICT = {
         "t800": IK_CONFIG_ROOT / "bvh_human_robot_hit_to_t800.json",
         #"t800_transparent": IK_CONFIG_ROOT / "bvh_human_robot_hit_to_t800.json",
         "t800_transparent": IK_CONFIG_ROOT / "bvh_human_robot_hit_to_t800--manual.json",
+        "t800_transparent_upperbody_core_candidate": IK_CONFIG_ROOT / "bvh_human_robot_hit_to_t800--manual_upperbody_core_candidate.json",
     },
     "bvh_nokov":{
         "unitree_g1": IK_CONFIG_ROOT / "bvh_nokov_to_g1.json",
@@ -117,6 +119,7 @@ ROBOT_BASE_DICT = {
     "fourier_gr3": "base_link",
     "t800": "LINK_BASE",
     "t800_transparent": "LINK_BASE",
+    "t800_transparent_upperbody_core_candidate": "LINK_BASE",
 }
 
 VIEWER_CAM_DISTANCE_DICT = {
@@ -140,6 +143,7 @@ VIEWER_CAM_DISTANCE_DICT = {
     "fourier_gr3": 2.0,
     "t800": 2.0,
     "t800_transparent": 2.0,
+    "t800_transparent_upperbody_core_candidate": 2.0,
 }
 
 

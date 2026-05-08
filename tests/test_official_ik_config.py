@@ -92,6 +92,29 @@ def test_manual_official_human_robot_hit_config_keeps_table_pos_offsets_synchron
         assert config["ik_match_table1"][robot_body][3] == config["ik_match_table2"][robot_body][3]
 
 
+def test_manual_official_human_robot_hit_config_uses_symmetric_limb_pos_offsets() -> None:
+    config = json.loads(MANUAL_OFFICIAL_CONFIG.read_text(encoding="utf-8"))
+    symmetric_pairs = [
+        ("LINK_HIP_YAW_L", "LINK_HIP_YAW_R"),
+        ("LINK_KNEE_PITCH_L", "LINK_KNEE_PITCH_R"),
+        ("LINK_ANKLE_ROLL_L", "LINK_ANKLE_ROLL_R"),
+        ("LINK_SHOULDER_YAW_L", "LINK_SHOULDER_YAW_R"),
+        ("LINK_ELBOW_PITCH_L", "LINK_ELBOW_PITCH_R"),
+        ("LINK_WRIST_END_L", "LINK_WRIST_END_R"),
+    ]
+
+    for table_name in ["ik_match_table1", "ik_match_table2"]:
+        for left_body, right_body in symmetric_pairs:
+            left_offset = config[table_name][left_body][3]
+            right_offset = config[table_name][right_body][3]
+
+            assert config[table_name][left_body][1] == config[table_name][right_body][1]
+            assert config[table_name][left_body][2] == config[table_name][right_body][2]
+            assert left_offset[0] == right_offset[0]
+            assert left_offset[1] == -right_offset[1]
+            assert left_offset[2] == right_offset[2]
+
+
 def test_manual_official_human_robot_hit_config_uses_low_weight_head_position_task() -> None:
     config = json.loads(MANUAL_OFFICIAL_CONFIG.read_text(encoding="utf-8"))
 
@@ -121,3 +144,24 @@ def test_manual_official_human_robot_hit_config_uses_foot_orientation_tasks_with
         [0.0, 0.0, 0.05],
         [0.7071068, 0.0, 0.0, 0.7071068],
     ]
+
+
+def test_upperbody_core_candidate_alias_uses_dedicated_config_and_transparent_t800_model() -> None:
+    from general_motion_retargeting.params import ROBOT_XML_DICT
+
+    expected_configs = {
+        "t800_transparent_upperbody_core_candidate": "bvh_human_robot_hit_to_t800--manual_upperbody_core_candidate.json",
+    }
+
+    for robot_name, config_name in expected_configs.items():
+        candidate_path = IK_CONFIG_DICT["bvh_human_robot_hit"][robot_name]
+        assert candidate_path.name == config_name
+        assert candidate_path.exists()
+        assert ROBOT_XML_DICT[robot_name].name == "t800_full_gmr_transparent.xml"
+
+
+def test_manual_transparent_alias_remains_the_default_manual_baseline() -> None:
+    assert (
+        IK_CONFIG_DICT["bvh_human_robot_hit"]["t800_transparent"].name
+        == "bvh_human_robot_hit_to_t800--manual.json"
+    )
