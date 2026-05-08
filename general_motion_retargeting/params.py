@@ -69,7 +69,8 @@ IK_CONFIG_DICT = {
         # and mixed per-joint rotation orders. Start from the mature T800 manual config
         # but keep it registered as a distinct route so tuning does not hide under LAFAN1.
         "t800": IK_CONFIG_ROOT / "bvh_human_robot_hit_to_t800.json",
-        "t800_transparent": IK_CONFIG_ROOT / "bvh_human_robot_hit_to_t800.json",
+        #"t800_transparent": IK_CONFIG_ROOT / "bvh_human_robot_hit_to_t800.json",
+        "t800_transparent": IK_CONFIG_ROOT / "bvh_human_robot_hit_to_t800--manual.json",
     },
     "bvh_nokov":{
         "unitree_g1": IK_CONFIG_ROOT / "bvh_nokov_to_g1.json",

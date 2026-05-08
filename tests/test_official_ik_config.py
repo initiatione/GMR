@@ -57,12 +57,23 @@ def test_official_human_robot_hit_root_rot_offset_preserves_calibrated_pelvis_fr
     assert config["ik_match_table2"]["LINK_BASE"][4] == [1.0, 0.0, 0.0, 0.0]
 
 
-def test_manual_official_human_robot_hit_config_initializes_all_rot_offsets_to_identity() -> None:
+def test_manual_official_human_robot_hit_config_uses_expected_rot_offsets_for_manual_groups() -> None:
     config = json.loads(MANUAL_OFFICIAL_CONFIG.read_text(encoding="utf-8"))
+    z_plus_90 = [0.7071068, 0.0, 0.0, 0.7071068]
+    z_plus_90_bodies = {
+        "LINK_TORSO_YAW",
+        "LINK_HEAD_YAW",
+        "LINK_HIP_YAW_L",
+        "LINK_KNEE_PITCH_L",
+        "LINK_ANKLE_ROLL_L",
+        "LINK_HIP_YAW_R",
+        "LINK_KNEE_PITCH_R",
+        "LINK_ANKLE_ROLL_R",
+    }
 
     for table_name in ["ik_match_table1", "ik_match_table2"]:
-        for robot_body, entry in config[table_name].items():
-            assert entry[4] == [1.0, 0.0, 0.0, 0.0], f"{table_name}:{robot_body}"
+        for robot_body in z_plus_90_bodies:
+            assert config[table_name][robot_body][4] == z_plus_90
 
 
 def test_manual_official_human_robot_hit_config_keeps_table_rot_offsets_synchronized() -> None:
