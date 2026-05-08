@@ -16,6 +16,7 @@ from general_motion_retargeting.motion_retarget_options import (
     calibrate_human_robot_hit_frames,
     resolve_actual_human_height,
     resolve_ik_safety_break,
+    resolve_max_iter,
 )
 from general_motion_retargeting.utils.lafan1 import load_bvh_file
 from rich import print
@@ -115,6 +116,27 @@ def estimate_ground_offset(retargeter: GMR, motion_frames):
 
     return float(lowest_z)
 
+
+def build_retargeter(
+    *,
+    source_profile: str,
+    robot: str,
+    actual_human_height: float | None,
+    debug_log_path: str | None,
+    debug_log_every_n: int,
+    disable_ik_safety_break: bool,
+    max_iter: int | None,
+):
+    return GMR(
+        src_human=f"bvh_{source_profile}",
+        tgt_robot=robot,
+        actual_human_height=resolve_actual_human_height(actual_human_height, source_profile),
+        debug_log_path=debug_log_path,
+        debug_log_every_n=debug_log_every_n,
+        ik_safety_break=resolve_ik_safety_break(disable_ik_safety_break),
+        max_iter=resolve_max_iter(max_iter),
+    )
+
 if __name__ == "__main__":
     
     HERE = pathlib.Path(__file__).parent
@@ -152,7 +174,7 @@ if __name__ == "__main__":
         # 这里把 T800 也接入到 BVH retarget 入口。
         # 这样在命令行里就可以直接使用 `--robot t800` 或 `--robot t800_transparent`
         # 走完整的 GMR BVH 重定向流程。
-        choices=["unitree_g1", "unitree_g1_with_hands", "booster_t1", "stanford_toddy", "fourier_n1", "engineai_pm01", "pal_talos", "t800", "t800_transparent", "t800_transparent_upperbody_core_candidate"],
+        choices=["unitree_g1", "unitree_g1_with_hands", "booster_t1", "stanford_toddy", "fourier_n1", "engineai_pm01", "pal_talos", "t800", "t800_transparent", "t800_transparent_manual", "t800_transparent_upperbody_core_candidate"],
         default="unitree_g1",
     )
     
@@ -230,6 +252,13 @@ if __name__ == "__main__":
         type=int,
         default=1,
         help="调试日志采样间隔。默认每帧都记录；设为 10 表示每 10 帧记录一次。",
+    )
+
+    parser.add_argument(
+        "--max_iter",
+        type=int,
+        default=None,
+        help="Optional IK iteration cap per stage. Defaults to the current GMR solver limit of 10.",
     )
 
     parser.add_argument(
@@ -358,13 +387,14 @@ if __name__ == "__main__":
     if source_profile == "human_robot_hit":
         lafan1_data_frames = calibrate_human_robot_hit_frames(lafan1_data_frames)
 
-    retargeter = GMR(
-        src_human=f"bvh_{source_profile}",
-        tgt_robot=args.robot,
-        actual_human_height=resolve_actual_human_height(actual_human_height, source_profile),
+    retargeter = build_retargeter(
+        source_profile=source_profile,
+        robot=args.robot,
+        actual_human_height=actual_human_height,
         debug_log_path=args.debug_log_path,
         debug_log_every_n=args.debug_log_every_n,
-        ik_safety_break=resolve_ik_safety_break(args.disable_ik_safety_break),
+        disable_ik_safety_break=args.disable_ik_safety_break,
+        max_iter=args.max_iter,
     )
 
     if args.auto_ground:

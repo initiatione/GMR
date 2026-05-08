@@ -16,6 +16,13 @@ MANUAL_OFFICIAL_CONFIG = (
     / "bvh_human_robot_hit_to_t800--manual.json"
 )
 
+MILD_TWO_STAGE_OFFICIAL_CONFIG = (
+    Path(__file__).resolve().parents[1]
+    / "general_motion_retargeting"
+    / "ik_configs"
+    / "bvh_human_robot_hit_to_t800--mild_two_stage.json"
+)
+
 
 def test_official_human_robot_hit_config_disables_untrusted_non_root_orientations() -> None:
     config = json.loads(IK_CONFIG_DICT["bvh_human_robot_hit"]["t800"].read_text(encoding="utf-8"))
@@ -160,8 +167,41 @@ def test_upperbody_core_candidate_alias_uses_dedicated_config_and_transparent_t8
         assert ROBOT_XML_DICT[robot_name].name == "t800_full_gmr_transparent.xml"
 
 
-def test_manual_transparent_alias_remains_the_default_manual_baseline() -> None:
+def test_mild_two_stage_transparent_alias_is_primary_official_visual_route() -> None:
     assert (
         IK_CONFIG_DICT["bvh_human_robot_hit"]["t800_transparent"].name
+        == "bvh_human_robot_hit_to_t800--mild_two_stage.json"
+    )
+    assert IK_CONFIG_DICT["bvh_human_robot_hit"]["t800_transparent"].exists()
+
+
+def test_mild_two_stage_config_has_runtime_required_metadata() -> None:
+    config = json.loads(MILD_TWO_STAGE_OFFICIAL_CONFIG.read_text(encoding="utf-8"))
+
+    assert config["robot_root_name"] == "LINK_BASE"
+    assert config["human_root_name"] == "Hips"
+    assert config["ground_height"] == 0.0
+    assert config["human_height_assumption"] == 1.8
+    assert config["use_ik_match_table1"] is True
+    assert config["use_ik_match_table2"] is True
+
+
+def test_mild_two_stage_config_only_changes_weights_from_manual_baseline() -> None:
+    manual = json.loads(MANUAL_OFFICIAL_CONFIG.read_text(encoding="utf-8"))
+    mild = json.loads(MILD_TWO_STAGE_OFFICIAL_CONFIG.read_text(encoding="utf-8"))
+
+    manual_probe = json.loads(json.dumps(manual))
+    for table_name in ["ik_match_table1", "ik_match_table2"]:
+        for robot_body in manual_probe[table_name]:
+            manual_probe[table_name][robot_body][1] = mild[table_name][robot_body][1]
+            manual_probe[table_name][robot_body][2] = mild[table_name][robot_body][2]
+
+    assert manual_probe == mild
+
+
+def test_manual_transparent_alias_remains_available_as_fallback() -> None:
+    assert (
+        IK_CONFIG_DICT["bvh_human_robot_hit"]["t800_transparent_manual"].name
         == "bvh_human_robot_hit_to_t800--manual.json"
     )
+    assert IK_CONFIG_DICT["bvh_human_robot_hit"]["t800_transparent_manual"].exists()

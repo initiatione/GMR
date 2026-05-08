@@ -24,6 +24,7 @@ class GeneralMotionRetargeting:
         debug_log_path: str | None = None,
         debug_log_every_n: int = 1,
         ik_safety_break: bool = True,
+        max_iter: int = 10,
     ) -> None:
 
         # load the robot model
@@ -90,7 +91,7 @@ class GeneralMotionRetargeting:
         self.human_scale_table = ik_config["human_scale_table"]
         self.ground = ik_config["ground_height"] * np.array([0, 0, 1])
 
-        self.max_iter = 10
+        self.max_iter = max_iter
 
         self.solver = solver
         self.damping = damping

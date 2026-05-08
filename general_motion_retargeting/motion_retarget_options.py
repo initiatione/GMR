@@ -10,6 +10,14 @@ def resolve_ik_safety_break(disable_ik_safety_break: bool) -> bool:
     return not disable_ik_safety_break
 
 
+def resolve_max_iter(max_iter: int | None) -> int:
+    if max_iter is None:
+        return 10
+    if max_iter <= 0:
+        raise ValueError("--max_iter must be greater than 0.")
+    return int(max_iter)
+
+
 def resolve_actual_human_height(loader_human_height: float | None, source_profile: str) -> float | None:
     """Return the height passed into GMR for source-profile scaling.
 

@@ -9,7 +9,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.bvh_to_robot import build_motion_data_from_qpos_list, maybe_step_viewer, slice_motion_frames
+from scripts.bvh_to_robot import build_motion_data_from_qpos_list, build_retargeter, maybe_step_viewer, slice_motion_frames
 from general_motion_retargeting.motion_retarget_options import resolve_ik_safety_break
 from general_motion_retargeting.retarget_config import iter_retarget_config_entries
 from general_motion_retargeting.params import IK_CONFIG_DICT
@@ -79,6 +79,36 @@ def test_bvh_to_robot_script_help_runs_from_repo_root() -> None:
 
     assert result.returncode == 0, result.stderr
     assert "--bvh_file" in result.stdout
+    assert "--max_iter" in result.stdout
+
+
+def test_build_retargeter_forwards_max_iter(monkeypatch) -> None:
+    captured_kwargs = {}
+
+    class FakeGMR:
+        def __init__(self, **kwargs):
+            captured_kwargs.update(kwargs)
+
+    monkeypatch.setattr("scripts.bvh_to_robot.GMR", FakeGMR)
+
+    retargeter = build_retargeter(
+        source_profile="human_robot_hit",
+        robot="t800_transparent",
+        actual_human_height=1.6,
+        debug_log_path="debug.jsonl",
+        debug_log_every_n=5,
+        disable_ik_safety_break=True,
+        max_iter=20,
+    )
+
+    assert isinstance(retargeter, FakeGMR)
+    assert captured_kwargs["src_human"] == "bvh_human_robot_hit"
+    assert captured_kwargs["tgt_robot"] == "t800_transparent"
+    assert captured_kwargs["actual_human_height"] is None
+    assert captured_kwargs["debug_log_path"] == "debug.jsonl"
+    assert captured_kwargs["debug_log_every_n"] == 5
+    assert captured_kwargs["ik_safety_break"] is False
+    assert captured_kwargs["max_iter"] == 20
 
 
 def test_build_motion_data_from_qpos_list_keeps_all_frames() -> None:
