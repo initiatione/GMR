@@ -108,6 +108,10 @@ class GeneralMotionRetargeting:
         self.rot_offsets2 = {}
         self.latest_task_targets1 = {}
         self.latest_task_targets2 = {}
+        self.latest_human_pipeline_debug = {}
+        self.latest_offset_debug1 = {}
+        self.task_config1 = {}
+        self.task_config2 = {}
 
         self.task_errors1 = {}
         self.task_errors2 = {}
@@ -145,6 +149,15 @@ class GeneralMotionRetargeting:
             self.rot_offsets1[body_name] = R.from_quat(
                 rot_offset, scalar_first=True
             )
+            self.task_config1[body_name] = {
+                "frame_name": frame_name,
+                "position_cost": pos_weight,
+                "orientation_cost": rot_weight,
+                "configured_pos_offset": list(pos_offset),
+                "effective_pos_offset": self.pos_offsets1[body_name].tolist(),
+                "rot_offset_wxyz": list(rot_offset),
+                "creates_task": creates_task,
+            }
             if creates_task:
                 task = mink.FrameTask(
                     frame_name=frame_name,
@@ -163,6 +176,15 @@ class GeneralMotionRetargeting:
             self.rot_offsets2[body_name] = R.from_quat(
                 rot_offset, scalar_first=True
             )
+            self.task_config2[body_name] = {
+                "frame_name": frame_name,
+                "position_cost": pos_weight,
+                "orientation_cost": rot_weight,
+                "configured_pos_offset": list(pos_offset),
+                "effective_pos_offset": self.pos_offsets2[body_name].tolist(),
+                "rot_offset_wxyz": list(rot_offset),
+                "creates_task": creates_task,
+            }
             if creates_task:
                 task = mink.FrameTask(
                     frame_name=frame_name,
@@ -180,12 +202,29 @@ class GeneralMotionRetargeting:
     def update_targets(self, human_data, offset_to_ground=False):
         # scale human data in local frame
         human_data = self.to_numpy(human_data)
-        human_data = self.scale_human_data(human_data, self.human_root_name, self.human_scale_table)
-        human_data = self.offset_human_data(human_data, self.pos_offsets1, self.rot_offsets1)
+        raw_human_data = self.copy_human_data(human_data)
+        scaled_human_data = self.scale_human_data(human_data, self.human_root_name, self.human_scale_table)
+        scaled_human_data_for_debug = self.copy_human_data(scaled_human_data)
+        self.latest_offset_debug1 = {}
+        human_data = self.offset_human_data(
+            scaled_human_data,
+            self.pos_offsets1,
+            self.rot_offsets1,
+            debug_info=self.latest_offset_debug1,
+        )
+        offset_human_data_for_debug = self.copy_human_data(human_data)
         human_data = self.apply_ground_offset(human_data)
+        grounded_human_data_for_debug = self.copy_human_data(human_data)
         if offset_to_ground:
             human_data = self.offset_human_data_to_ground(human_data)
+            grounded_human_data_for_debug = self.copy_human_data(human_data)
         self.scaled_human_data = human_data
+        self.latest_human_pipeline_debug = self.collect_human_pipeline_debug(
+            raw_human_data=raw_human_data,
+            scaled_human_data=scaled_human_data_for_debug,
+            offset_human_data=offset_human_data_for_debug,
+            grounded_human_data=grounded_human_data_for_debug,
+        )
 
         if self.use_ik_match_table1:
             for body_name in self.human_body_to_task1.keys():
@@ -224,6 +263,23 @@ class GeneralMotionRetargeting:
         final_error2 = None
         num_iter1 = 0
         num_iter2 = 0
+        should_write_debug = self.debug_log_path is not None and frame_index % self.debug_log_every_n == 0
+        pre_task_table1 = None
+        pre_task_table2 = None
+
+        if should_write_debug:
+            pre_task_table1 = self.collect_task_debug_info(
+                self.human_body_to_task1,
+                self.task1_body_to_frame,
+                self.latest_task_targets1,
+                self.task_config1,
+            )
+            pre_task_table2 = self.collect_task_debug_info(
+                self.human_body_to_task2,
+                self.task2_body_to_frame,
+                self.latest_task_targets2,
+                self.task_config2,
+            )
 
         if self.use_ik_match_table1:
             # Solve the IK problem
@@ -294,7 +350,7 @@ class GeneralMotionRetargeting:
                 num_iter2 += 1
             final_error2 = float(next_error)
 
-        if self.debug_log_path is not None and frame_index % self.debug_log_every_n == 0:
+        if should_write_debug:
             self.write_debug_log(
                 frame_index=frame_index,
                 initial_error1=initial_error1,
@@ -303,6 +359,8 @@ class GeneralMotionRetargeting:
                 final_error2=final_error2,
                 num_iter1=num_iter1,
                 num_iter2=num_iter2,
+                pre_task_table1=pre_task_table1,
+                pre_task_table2=pre_task_table2,
             )
                 
             
@@ -328,6 +386,12 @@ class GeneralMotionRetargeting:
         for body_name in human_data.keys():
             human_data[body_name] = [np.asarray(human_data[body_name][0]), np.asarray(human_data[body_name][1])]
         return human_data
+
+    def copy_human_data(self, human_data):
+        return {
+            body_name: [np.asarray(pos).copy(), np.asarray(quat).copy()]
+            for body_name, (pos, quat) in human_data.items()
+        }
 
 
     def scale_human_data(self, human_data, human_root_name, human_scale_table):
@@ -355,7 +419,7 @@ class GeneralMotionRetargeting:
 
         return human_data_global
     
-    def offset_human_data(self, human_data, pos_offsets, rot_offsets):
+    def offset_human_data(self, human_data, pos_offsets, rot_offsets, debug_info=None):
         """the pos offsets are applied in the local frame"""
         offset_human_data = {}
         for body_name in human_data.keys():
@@ -370,6 +434,16 @@ class GeneralMotionRetargeting:
             global_pos_offset = R.from_quat(updated_quat, scalar_first=True).apply(local_offset)
             
             offset_human_data[body_name][0] = pos + global_pos_offset
+            if debug_info is not None:
+                debug_info[body_name] = {
+                    "input_pos": np.asarray(pos).tolist(),
+                    "input_quat_wxyz": np.asarray(quat).tolist(),
+                    "rot_offset_wxyz": rot_offsets[body_name].as_quat(scalar_first=True).tolist(),
+                    "updated_quat_wxyz": np.asarray(updated_quat).tolist(),
+                    "local_pos_offset_m": np.asarray(local_offset).tolist(),
+                    "world_pos_offset_m": np.asarray(global_pos_offset).tolist(),
+                    "output_pos": np.asarray(offset_human_data[body_name][0]).tolist(),
+                }
            
         return offset_human_data
             
@@ -425,7 +499,67 @@ class GeneralMotionRetargeting:
         delta_rotation = target_rotation.inv() * current_rotation
         return float(np.degrees(delta_rotation.magnitude()))
 
-    def collect_task_debug_info(self, body_to_task, body_to_frame, latest_targets):
+    def pose_to_debug(self, pose):
+        if pose is None:
+            return None
+
+        pos, quat = pose
+        return {
+            "pos": np.asarray(pos).tolist(),
+            "quat_wxyz": np.asarray(quat).tolist(),
+        }
+
+    def collect_human_pipeline_debug(
+        self,
+        raw_human_data,
+        scaled_human_data,
+        offset_human_data,
+        grounded_human_data,
+    ):
+        body_names = sorted(set(self.human_body_to_task1) | set(self.human_body_to_task2))
+        pipeline_debug = {}
+
+        for body_name in body_names:
+            pipeline_debug[body_name] = {
+                "raw": self.pose_to_debug(raw_human_data.get(body_name)),
+                "scaled": self.pose_to_debug(scaled_human_data.get(body_name)),
+                "after_table1_offset": self.pose_to_debug(offset_human_data.get(body_name)),
+                "after_ground_offset": self.pose_to_debug(grounded_human_data.get(body_name)),
+                "table1_offset_application": self.latest_offset_debug1.get(body_name),
+            }
+
+        return pipeline_debug
+
+    def collect_joint_limit_debug_info(self):
+        joint_debug = {}
+        qpos = np.asarray(self.configuration.data.qpos).copy()
+
+        for joint_name in self.robot_actuated_joint_names_in_order:
+            joint_id = mj.mj_name2id(self.model, mj.mjtObj.mjOBJ_JOINT, joint_name)
+            if joint_id < 0:
+                continue
+
+            qpos_addr = int(self.model.jnt_qposadr[joint_id])
+            value = float(qpos[qpos_addr])
+            limited = bool(self.model.jnt_limited[joint_id])
+            entry = {
+                "qpos_addr": qpos_addr,
+                "value_rad": value,
+                "limited": limited,
+            }
+
+            if limited:
+                lower, upper = [float(v) for v in self.model.jnt_range[joint_id]]
+                entry["range_rad"] = [lower, upper]
+                entry["margin_lower_rad"] = value - lower
+                entry["margin_upper_rad"] = upper - value
+                entry["margin_min_rad"] = min(value - lower, upper - value)
+
+            joint_debug[joint_name] = entry
+
+        return joint_debug
+
+    def collect_task_debug_info(self, body_to_task, body_to_frame, latest_targets, task_config=None):
         """收集当前 task 集合的逐项误差明细。
 
         输出里同时保留三类信息：
@@ -445,6 +579,7 @@ class GeneralMotionRetargeting:
             target_info = latest_targets.get(body_name)
             current_pose = self.get_robot_body_pose(frame_name)
             task_error_vector = np.asarray(task.compute_error(self.configuration)).reshape(-1)
+            config_info = (task_config or {}).get(body_name)
 
             task_entry = {
                 "frame_name": frame_name,
@@ -455,6 +590,8 @@ class GeneralMotionRetargeting:
                 # 它们适合比较“优化前后是否变好”，但不应直接解释为米/度。
                 "mink_task_error_norm_local": float(np.linalg.norm(task_error_vector)),
             }
+            if config_info is not None:
+                task_entry["ik_config"] = config_info
 
             if task_error_vector.shape[0] >= 3:
                 task_entry["task_position_error_norm"] = float(np.linalg.norm(task_error_vector[:3]))
@@ -475,11 +612,26 @@ class GeneralMotionRetargeting:
                 if target_info is not None:
                     target_pos = target_info["target_pos"]
                     target_quat = target_info["target_quat"]
-                    task_entry["position_error_norm"] = float(np.linalg.norm(current_pos - target_pos))
+                    target_to_current = current_pos - target_pos
+                    current_to_target = target_pos - current_pos
+                    task_entry["world_position_error_vector_m"] = target_to_current.tolist()
+                    task_entry["world_position_target_to_current_m"] = target_to_current.tolist()
+                    task_entry["world_position_current_to_target_m"] = current_to_target.tolist()
+                    task_entry["position_error_norm"] = float(np.linalg.norm(target_to_current))
                     task_entry["orientation_error_deg"] = self.compute_quaternion_angle_error_deg(
                         target_quat,
                         current_quat,
                     )
+                    target_rotation = R.from_quat(target_quat, scalar_first=True)
+                    current_rotation = R.from_quat(current_quat, scalar_first=True)
+                    current_in_target = target_rotation.inv() * current_rotation
+                    target_in_current = current_rotation.inv() * target_rotation
+                    task_entry["axis_alignment_current_in_target"] = current_in_target.as_matrix().tolist()
+                    task_entry["axis_alignment_target_in_current"] = target_in_current.as_matrix().tolist()
+                    task_entry["orientation_target_to_current_rotvec_rad"] = current_in_target.as_rotvec().tolist()
+                    task_entry["orientation_target_to_current_rotvec_deg"] = np.degrees(
+                        current_in_target.as_rotvec()
+                    ).tolist()
                     # 这里补一组更明确的字段名，避免后续把世界坐标误差和 Mink 局部误差混淆。
                     task_entry["world_position_error_norm_m"] = task_entry["position_error_norm"]
                     task_entry["world_orientation_error_deg"] = task_entry["orientation_error_deg"]
@@ -497,6 +649,8 @@ class GeneralMotionRetargeting:
         final_error2,
         num_iter1,
         num_iter2,
+        pre_task_table1=None,
+        pre_task_table2=None,
     ):
         """把当前帧的数值化调试信息写入 jsonl 文件。"""
 
@@ -515,21 +669,27 @@ class GeneralMotionRetargeting:
             "root_pos": qpos[:3].tolist(),
             "root_rot_wxyz": qpos[3:7].tolist(),
             "dof_pos": qpos[7:].tolist(),
+            "human_pipeline": self.latest_human_pipeline_debug,
             # `dof_names_in_order_full_nv` 对应的是 Mujoco `nv` 维速度自由度，含 freejoint 的重复 root 名。
             "dof_names_in_order_full_nv": self.robot_dof_names_in_order,
             # `actuated_joint_names_in_order` 才和 `dof_pos` 一一对应。
             "actuated_joint_names_in_order": self.robot_actuated_joint_names_in_order,
             # 为兼容旧分析脚本，暂时保留原字段，但语义上等同于 actuated joint 顺序。
             "dof_names_in_order": self.robot_actuated_joint_names_in_order,
+            "joint_limits": self.collect_joint_limit_debug_info(),
+            "task_table1_pre_ik": pre_task_table1,
+            "task_table2_pre_ik": pre_task_table2,
             "task_table1": self.collect_task_debug_info(
                 self.human_body_to_task1,
                 self.task1_body_to_frame,
                 self.latest_task_targets1,
+                self.task_config1,
             ),
             "task_table2": self.collect_task_debug_info(
                 self.human_body_to_task2,
                 self.task2_body_to_frame,
                 self.latest_task_targets2,
+                self.task_config2,
             ),
         }
 

@@ -82,3 +82,42 @@ def test_manual_official_human_robot_hit_config_keeps_table_rot_offsets_synchron
     assert set(config["ik_match_table1"]) == set(config["ik_match_table2"])
     for robot_body in config["ik_match_table1"]:
         assert config["ik_match_table1"][robot_body][4] == config["ik_match_table2"][robot_body][4]
+
+
+def test_manual_official_human_robot_hit_config_keeps_table_pos_offsets_synchronized() -> None:
+    config = json.loads(MANUAL_OFFICIAL_CONFIG.read_text(encoding="utf-8"))
+
+    assert set(config["ik_match_table1"]) == set(config["ik_match_table2"])
+    for robot_body in config["ik_match_table1"]:
+        assert config["ik_match_table1"][robot_body][3] == config["ik_match_table2"][robot_body][3]
+
+
+def test_manual_official_human_robot_hit_config_uses_low_weight_head_position_task() -> None:
+    config = json.loads(MANUAL_OFFICIAL_CONFIG.read_text(encoding="utf-8"))
+
+    assert config["ik_match_table1"]["LINK_HEAD_YAW"] == [
+        "Head",
+        0,
+        0,
+        [0.0, 0.0, 0.05],
+        [0.7071068, 0.0, 0.0, 0.7071068],
+    ]
+
+
+def test_manual_official_human_robot_hit_config_uses_foot_orientation_tasks_without_overconstraining() -> None:
+    config = json.loads(MANUAL_OFFICIAL_CONFIG.read_text(encoding="utf-8"))
+
+    for table_name in ["ik_match_table1", "ik_match_table2"]:
+        assert config[table_name]["LINK_ANKLE_ROLL_L"][1] == 50
+        assert config[table_name]["LINK_ANKLE_ROLL_R"][1] == 50
+        assert config[table_name]["LINK_ANKLE_ROLL_L"][2] == 5
+        assert config[table_name]["LINK_ANKLE_ROLL_R"][2] == 5
+        assert config[table_name]["LINK_ANKLE_ROLL_L"][3] == [0.0, 0.0, -0.01]
+        assert config[table_name]["LINK_ANKLE_ROLL_R"][3] == [0.0, 0.0, -0.01]
+    assert config["ik_match_table2"]["LINK_HEAD_YAW"] == [
+        "Head",
+        1,
+        0,
+        [0.0, 0.0, 0.05],
+        [0.7071068, 0.0, 0.0, 0.7071068],
+    ]

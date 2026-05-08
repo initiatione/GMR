@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+import types
 
 import numpy as np
+from scipy.spatial.transform import Rotation as R
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -66,3 +68,63 @@ def test_summarize_debug_records_ranks_position_and_orientation_errors() -> None
     assert summary["final_error1"]["mean"] == 3.0
     assert summary["top_position_errors"][0]["body"] == "LeftHand"
     assert summary["top_orientation_errors"][0]["body"] == "LeftLeg"
+
+
+def test_summarize_debug_records_ranks_world_position_axis_errors() -> None:
+    records = [
+        {
+            "task_table1": {
+                "LeftArm": {"world_position_error_vector_m": [0.30, -0.02, 0.01]},
+                "RightArm": {"world_position_error_vector_m": [0.02, -0.40, 0.03]},
+            },
+        },
+        {
+            "task_table1": {
+                "LeftArm": {"world_position_error_vector_m": [0.20, -0.01, 0.02]},
+                "RightArm": {"world_position_error_vector_m": [0.01, -0.20, 0.04]},
+            },
+        },
+    ]
+
+    summary = summarize_debug_records(records)
+
+    assert summary["top_position_axis_errors"]["x"][0]["body"] == "LeftArm"
+    assert summary["top_position_axis_errors"]["y"][0]["body"] == "RightArm"
+    assert summary["top_position_axis_errors"]["z"][0]["body"] == "RightArm"
+
+
+def test_collect_task_debug_info_reports_world_vectors_and_axis_alignment() -> None:
+    sys.modules.setdefault("mink", types.SimpleNamespace())
+    sys.modules.setdefault("mujoco", types.SimpleNamespace())
+    from general_motion_retargeting.motion_retarget import GeneralMotionRetargeting
+
+    class DummyTask:
+        def compute_error(self, configuration):
+            return np.array([0.1, -0.2, 0.3, 0.01, -0.02, 0.03], dtype=np.float64)
+
+    retargeter = GeneralMotionRetargeting.__new__(GeneralMotionRetargeting)
+    retargeter.configuration = object()
+    retargeter.get_robot_body_pose = lambda frame_name: (
+        np.array([1.25, 1.5, 3.75], dtype=np.float64),
+        R.from_euler("z", 90, degrees=True).as_quat(scalar_first=True),
+    )
+
+    info = retargeter.collect_task_debug_info(
+        body_to_task={"LeftArm": DummyTask()},
+        body_to_frame={"LeftArm": "LINK_SHOULDER_YAW_L"},
+        latest_targets={
+            "LeftArm": {
+                "frame_name": "LINK_SHOULDER_YAW_L",
+                "target_pos": np.array([1.0, 2.0, 3.0], dtype=np.float64),
+                "target_quat": np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64),
+            }
+        },
+    )
+
+    left_arm = info["LeftArm"]
+    assert left_arm["world_position_error_vector_m"] == [0.25, -0.5, 0.75]
+    np.testing.assert_allclose(
+        left_arm["axis_alignment_current_in_target"],
+        R.from_euler("z", 90, degrees=True).as_matrix(),
+        atol=1e-7,
+    )
