@@ -113,3 +113,6 @@ yaml_to_flat_csv.py
 
 compute_rotation.py
 /retarget_t800
+
+# Local retargeting debug JSONL and derived summaries
+/debug_logs
