@@ -40,3 +40,10 @@ def test_official_human_robot_hit_config_uses_calibrated_root_orientation_guide(
 
     assert config["ik_match_table1"]["LINK_BASE"][2] > 0
     assert config["ik_match_table2"]["LINK_BASE"][2] > 0
+
+
+def test_official_human_robot_hit_root_rot_offset_preserves_calibrated_pelvis_frame() -> None:
+    config = json.loads(IK_CONFIG_DICT["bvh_human_robot_hit"]["t800"].read_text(encoding="utf-8"))
+
+    assert config["ik_match_table1"]["LINK_BASE"][4] == [1.0, 0.0, 0.0, 0.0]
+    assert config["ik_match_table2"]["LINK_BASE"][4] == [1.0, 0.0, 0.0, 0.0]
