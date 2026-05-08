@@ -12,7 +12,11 @@ from general_motion_retargeting import GeneralMotionRetargeting as GMR
 from general_motion_retargeting import RobotMotionViewer
 from general_motion_retargeting.motion_contact_postprocess import apply_contact_aware_postprocess, build_contact_aware_config
 from general_motion_retargeting.motion_grounding import align_motion_root_to_ground
-from general_motion_retargeting.motion_retarget_options import resolve_ik_safety_break
+from general_motion_retargeting.motion_retarget_options import (
+    calibrate_human_robot_hit_frames,
+    resolve_actual_human_height,
+    resolve_ik_safety_break,
+)
 from general_motion_retargeting.utils.lafan1 import load_bvh_file
 from rich import print
 from tqdm import tqdm
@@ -351,11 +355,13 @@ if __name__ == "__main__":
         source_profile = args.format
     else:
         source_profile = args.source_profile
+    if source_profile == "human_robot_hit":
+        lafan1_data_frames = calibrate_human_robot_hit_frames(lafan1_data_frames)
 
     retargeter = GMR(
         src_human=f"bvh_{source_profile}",
         tgt_robot=args.robot,
-        actual_human_height=actual_human_height,
+        actual_human_height=resolve_actual_human_height(actual_human_height, source_profile),
         debug_log_path=args.debug_log_path,
         debug_log_every_n=args.debug_log_every_n,
         ik_safety_break=resolve_ik_safety_break(args.disable_ik_safety_break),

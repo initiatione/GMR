@@ -9,10 +9,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from general_motion_retargeting.params import IK_CONFIG_DICT
 
 
-def test_official_human_robot_hit_config_disables_untrusted_lower_body_orientations() -> None:
+def test_official_human_robot_hit_config_disables_untrusted_non_root_orientations() -> None:
     config = json.loads(IK_CONFIG_DICT["bvh_human_robot_hit"]["t800"].read_text(encoding="utf-8"))
     orientation_disabled_bodies = {
-        "Hips",
         "Spine2",
         "Head",
         "LeftUpLeg",
@@ -21,6 +20,12 @@ def test_official_human_robot_hit_config_disables_untrusted_lower_body_orientati
         "RightLeg",
         "LeftFootMod",
         "RightFootMod",
+        "LeftArm",
+        "RightArm",
+        "LeftForeArm",
+        "RightForeArm",
+        "LeftHand",
+        "RightHand",
     }
 
     for table_name in ["ik_match_table1", "ik_match_table2"]:
@@ -30,14 +35,8 @@ def test_official_human_robot_hit_config_disables_untrusted_lower_body_orientati
                 assert entry[2] == 0, f"{table_name}:{body_name} should be position-driven for official BVH"
 
 
-def test_official_human_robot_hit_config_keeps_shoulder_orientation_guides() -> None:
+def test_official_human_robot_hit_config_uses_calibrated_root_orientation_guide() -> None:
     config = json.loads(IK_CONFIG_DICT["bvh_human_robot_hit"]["t800"].read_text(encoding="utf-8"))
-    shoulder_entries = [
-        entry
-        for table in [config["ik_match_table1"], config["ik_match_table2"]]
-        for entry in table.values()
-        if entry[0] in {"LeftArm", "RightArm"}
-    ]
 
-    assert shoulder_entries
-    assert all(entry[2] > 0 for entry in shoulder_entries)
+    assert config["ik_match_table1"]["LINK_BASE"][2] > 0
+    assert config["ik_match_table2"]["LINK_BASE"][2] > 0
