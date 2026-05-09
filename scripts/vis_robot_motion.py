@@ -1,7 +1,16 @@
-from general_motion_retargeting import RobotMotionViewer, load_robot_motion
 import argparse
 import os
+from pathlib import Path
+import sys
 from tqdm import tqdm
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from general_motion_retargeting.data_loader import load_robot_motion
+from general_motion_retargeting.robot_motion_viewer import RobotMotionViewer
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
