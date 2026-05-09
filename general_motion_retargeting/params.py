@@ -67,9 +67,13 @@ IK_CONFIG_DICT = {
         "t800_transparent": IK_CONFIG_ROOT / "bvh_lafan1_to_t800_origin_manual.json",
     },
     "bvh_human_robot_hit":{
-        # Official competition BVH profile: 60 joints, ToeBase, Spine3/Neck1, fingers,
-        # and mixed per-joint rotation orders. Start from the mature T800 manual config
-        # but keep it registered as a distinct route so tuning does not hide under LAFAN1.
+        # 官方比赛 BVH 和 LAFAN1 不是同一个骨架 profile：
+        # 它有 60 个关节、ToeBase、Spine3/Neck1、手指，以及混合的 per-joint rotation order。
+        # 所以这里单独注册 `bvh_human_robot_hit`，避免把官方数据的尺度/坐标/IK 调参藏进 LAFAN1 route。
+        #
+        # `t800` 和 `t800_transparent` 共享已经验收过的 mild_two_stage IK config；
+        # 两者差别只在 MuJoCo XML：正式模型用于常规导出，透明模型用于看坐标轴和人工调 IK。
+        # manual 保留成 fallback，后续手动调 offset/rot_offset 时不要直接覆盖 mild_two_stage。
         "t800": IK_CONFIG_ROOT / "bvh_human_robot_hit_to_t800--mild_two_stage.json",
         "t800_transparent": IK_CONFIG_ROOT / "bvh_human_robot_hit_to_t800--mild_two_stage.json",
         "t800_transparent_manual": IK_CONFIG_ROOT / "bvh_human_robot_hit_to_t800--manual.json",

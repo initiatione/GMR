@@ -159,7 +159,10 @@ if __name__ == "__main__":
         "--source_profile",
         choices=["auto", "lafan1", "human_robot_hit", "nokov"],
         default="auto",
-        help="Explicit GMR BVH source profile. Use human_robot_hit for official competition BVH files.",
+        help=(
+            "Explicit GMR BVH source profile. Use human_robot_hit for official competition BVH files; "
+            "--format lafan1 only means the loader emits LAFAN1-style body keys."
+        ),
     )
     
     parser.add_argument(
@@ -258,7 +261,10 @@ if __name__ == "__main__":
         "--max_iter",
         type=int,
         default=None,
-        help="Optional IK iteration cap per stage. Defaults to the current GMR solver limit of 10.",
+        help=(
+            "Optional IK iteration cap per stage. Defaults to the current GMR solver limit of 10; "
+            "higher values are for A/B diagnosis and are not automatically better."
+        ),
     )
 
     parser.add_argument(

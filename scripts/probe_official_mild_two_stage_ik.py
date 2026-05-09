@@ -59,7 +59,12 @@ FULL_MOTION_SPECS = {
 
 WeightPatch = dict[str, dict[str, tuple[float, float]]]
 
-
+# mild_two_stage 的命名含义：
+# - mild：只温和加强核心和上肢，不把脚/髋/全身都拉成硬跟踪，避免高动态动作里抖动和限位压力变大。
+# - two_stage：同时利用 GMR 的两张 IK table。table1 给一点姿态预对齐，table2 再做最终位置/姿态跟踪。
+#
+# 这里的数值只改每个 IK target 的 position/orientation 权重，不改 manual 基线里的 offset/rot_offset。
+# 这样做是为了让候选之间可追溯：如果视觉变好或变坏，优先归因到权重，而不是混入新的坐标轴手调。
 MILD_TWO_STAGE_PATCH: WeightPatch = {
     "ik_match_table1": {
         "LINK_TORSO_YAW": (0, 4),
@@ -166,11 +171,18 @@ KEY_BODIES = [
 
 
 ACCEPTANCE_LIMITS = {
+    # 单帧 qpos 最大跳变是这里最敏感的“奇异/近奇异”代理指标。
+    # IK error 变小但 qpos 跳变变大，通常说明机器人在某些帧用了很激烈的关节补偿，不适合直接进训练。
     "qpos_step_abs_max_ratio": 1.05,
     "qpos_step_abs_p95_ratio": 1.20,
+    # 不允许候选比 manual baseline 命中更多关节限位。限位压力上升时，viewer 里未必第一眼明显，
+    # 但后续导入训练和高速回放时很容易变成抖动、穿模或策略难学。
     "joint_limit_hit_ratio": 1.00,
+    # 脚端指标单独设门槛，是因为脚掌是否稳定会直接影响 grounding、接触和训练质量；
+    # 不能只因为手臂误差下降，就接受脚底明显变差的候选。
     "foot_position_p95_increase_mm": 2.0,
     "foot_orientation_p95_increase_deg": 1.0,
+    # root 高度范围异常扩大，常见原因是 IK 在某些高动态帧拉身体补偿四肢目标。
     "root_z_extra_range_m": 0.05,
 }
 
@@ -197,6 +209,8 @@ def apply_weight_patch(base_config: dict[str, Any], patch: WeightPatch) -> dict[
 
 
 def assert_weight_only_changes(base_config: dict[str, Any], variant_config: dict[str, Any]) -> None:
+    # trial 脚本只负责筛“权重候选”。如果 offset/rot_offset 也变了，
+    # 那就已经是另一类人工 IK config 调参，必须单独命名和复核，不能混进 mild_two_stage 的统计结论。
     base_probe = copy.deepcopy(base_config)
     variant_probe = copy.deepcopy(variant_config)
     for table_name in ["ik_match_table1", "ik_match_table2"]:

@@ -199,6 +199,10 @@ def inspect_bvh_profile(bvh_file: str | Path) -> dict:
     )
 
     # 这里给出一个“项目级 profile”判定，用来驱动后续适配层。
+    #
+    # 注意这里不是在判断“拳击动作”或“某个文件名”，而是在判断骨架长相：
+    # 官方这批 BVH 稳定地带 ToeBase、Spine3/Neck1 和手指；LAFAN1 则是更干净的 22 个主体关节。
+    # 用骨架特征判定，比靠路径名或文件名前缀更稳，后面如果换一批同结构 BVH 也还能复用。
     if has_toe_base and has_spine3 and has_neck1 and has_fingers:
         detected_profile = "human_robot_hit"
     elif has_standard_toe and not has_toe_base and not has_spine3 and not has_neck1:
@@ -329,7 +333,9 @@ def read_bvh_with_joint_orders(bvh_file: str | Path, start: int | None = None, e
                     order="".join(joint_rotation_order),
                 )[0]
 
-    # 保持和 vendor 版一致：沿时间维去除四元数符号跳变，避免插值和 FK 时出现镜像翻转。
+    # 保持和 vendor 版一致：沿时间维去除四元数符号跳变。
+    # 四元数 q 和 -q 表示同一个旋转，但直接逐帧看会像突然翻面；
+    # 不先消掉这个符号跳变，后面的速度、插值、debug 曲线都会很难判断。
     rotations = utils.remove_quat_discontinuities(rotations)
 
     return Anim(
@@ -361,17 +367,19 @@ def estimate_height_from_raw_global_positions(positions_by_body: dict[str, np.nd
 
 
 def detect_bvh_unit_divisor(raw_height: float | None, detected_profile: str) -> float:
-    """Choose the raw-BVH-unit divisor used to convert global positions to meters.
+    """选择 raw BVH 坐标转米时使用的除数。
 
-    Standard LAFAN1 files in this workspace are centimeter-scale. The official
-    `human_robot_hit` BVH files use a much smaller raw skeleton height (~57);
-    treating those values as inches puts the root/body heights in the same
-    physical range as the official 40-column NPY examples and LAFAN1 retargets.
+    这不是说 BVH 文件头里明确写了“单位是英寸”。
+    这里做的是工程判定：官方 `human_robot_hit` 的 raw 身高大约 57。
+    如果按厘米除以 100，人体只有 0.57m；如果按 inch-style 除以 39.37，
+    身高会落在正常人体范围，也更接近官方 40 列 NPY 参考动作的尺度。
     """
 
     if detected_profile == "human_robot_hit" and raw_height is not None:
         inch_height_m = raw_height / 39.37
         cm_height_m = raw_height / 100.0
+        # 只有在“按英寸像正常人、按厘米像小人”这两个条件同时成立时才切到 39.37。
+        # 这样可以避免误伤其它本来就是厘米制、但恰好被识别成 unknown/LAFAN1 的 BVH。
         if 1.2 <= inch_height_m <= 2.2 and cm_height_m < 1.0:
             return 39.37
 
@@ -381,6 +389,8 @@ def detect_bvh_unit_divisor(raw_height: float | None, detected_profile: str) -> 
 def detect_bvh_unit_divisor_from_anim(data: Anim, detected_profile: str, rotation_matrix: np.ndarray) -> tuple[float, float | None]:
     """Estimate BVH raw-unit scale from a short FK pass."""
 
+    # 不用整段动作估身高，前 200 帧已经足够判断单位量级；
+    # 这样长动作启动时不会因为一个单位检查多耗太多时间。
     sample_end = min(200, data.pos.shape[0])
     global_data = utils.quat_fk(data.quats[:sample_end], data.pos[:sample_end], data.parents)
 
@@ -400,6 +410,7 @@ def adapt_frame_for_gmr(frame_data: dict, detected_profile: str) -> dict:
 
     if detected_profile == "human_robot_hit":
         # 当前项目骨架使用 `ToeBase`，而 GMR 的 LAFAN1 配置默认读取 `Toe`。
+        # 这里不是删掉 ToeBase，也不是重建脚模型，只是多放一个别名，方便旧的 IK 目标名继续工作。
         if "LeftToe" not in adapted_frame and "LeftToeBase" in adapted_frame:
             adapted_frame["LeftToe"] = adapted_frame["LeftToeBase"]
         if "RightToe" not in adapted_frame and "RightToeBase" in adapted_frame:
@@ -408,6 +419,7 @@ def adapt_frame_for_gmr(frame_data: dict, detected_profile: str) -> dict:
         # 官方 LAFAN1 的肩膀从 `Spine2` 分叉；当前项目骨架则是 `Spine3`。
         # GMR 的 BVH IK 配置把“上躯干目标”写成了 `Spine2`，所以这里把项目里的 `Spine3`
         # 映射成 GMR 语义下的 `Spine2`，让 torso / shoulder 参考点更接近官方样例。
+        # 这属于语义桥接，不改变原始 `Spine3` 本身；后面如果要做更细的胸/颈跟踪，仍然可以回看原关节。
         if "Spine3" in adapted_frame:
             adapted_frame["Spine2"] = adapted_frame["Spine3"]
 

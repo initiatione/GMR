@@ -35,8 +35,14 @@ def load_bvh_file(bvh_file, format="lafan1"):
         data = read_bvh(bvh_file)
     global_data = utils.quat_fk(data.quats, data.pos, data.parents)
 
+    # GMR 里这一路 BVH loader 最终希望把源动作放到项目约定的世界坐标里。
+    # 这里的矩阵是沿用原 GMR/LAFAN1 入口的坐标换基；后面 official BVH 的修复主要在
+    # “真实 CHANNELS 顺序、单位缩放、骨架语义别名、IK config”上做，而不是改这个全局换基。
     rotation_matrix = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
     rotation_quat = R.from_matrix(rotation_matrix).as_quat(scalar_first=True)
+    # 先用一小段 FK 估 raw 身高，再决定 raw 坐标除以多少变成米。
+    # LAFAN1 大多按厘米理解；官方 human_robot_hit 这批 raw 身高约 57，
+    # 按 /100 会变成 0.57m，明显不合理，所以会被判到 /39.37 的 inch-style 路线。
     unit_divisor, raw_height = detect_bvh_unit_divisor_from_anim(
         data,
         bvh_profile["detected_profile"],
@@ -54,6 +60,8 @@ def load_bvh_file(bvh_file, format="lafan1"):
         result = {}
         for i, bone in enumerate(data.bones):
             orientation = utils.quat_mul(rotation_quat, global_data[0][frame, i])
+            # 到这里才真正把 BVH raw 坐标变成米。这个除数如果错了，
+            # 后面 IK 看起来就会像“人体比例不对”，再怎么调权重也只是补偿尺度错误。
             position = global_data[1][frame, i] @ rotation_matrix.T / unit_divisor
             result[bone] = [position, orientation]
 
@@ -64,6 +72,8 @@ def load_bvh_file(bvh_file, format="lafan1"):
         result = adapt_frame_for_gmr(result, bvh_profile["detected_profile"])
 
         if format == "lafan1":
+            # `format=lafan1` 在当前脚本里表示“输出给 GMR 的 LAFAN1 风格主体字段”，
+            # 不是说输入文件一定是标准 LAFAN1。official BVH 仍然要配合 source_profile=human_robot_hit。
             left_toe_name = "LeftToe" if "LeftToe" in result else "LeftToeBase"
             right_toe_name = "RightToe" if "RightToe" in result else "RightToeBase"
             if left_toe_name not in result or right_toe_name not in result:
