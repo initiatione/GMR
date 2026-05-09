@@ -111,6 +111,14 @@ def transform_vertex(matrix: list[list[float]], vertex: tuple[float, float, floa
     return (transformed[0] / w, transformed[1] / w, transformed[2] / w)
 
 
+def linear_determinant(matrix: list[list[float]]) -> float:
+    return (
+        matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1])
+        - matrix[0][1] * (matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0])
+        + matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0])
+    )
+
+
 def vector_subtract(a: tuple[float, float, float], b: tuple[float, float, float]) -> tuple[float, float, float]:
     return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
 
@@ -249,6 +257,7 @@ def triangles_for_materials(
         if mesh is None:
             continue
 
+        reverses_winding = linear_determinant(matrix) < 0
         for triangles_node in mesh.findall("c:triangles", COLLADA_NS):
             material_symbol = triangles_node.get("material", "unassigned")
             material_id = material_bindings.get(material_symbol, material_symbol)
@@ -276,6 +285,8 @@ def triangles_for_materials(
                 for vertex_number in range(3):
                     vertex_index = indices[index + vertex_number * stride + vertex_offset]
                     triangle_vertices.append(transform_vertex(matrix, position_values[vertex_index]))
+                if reverses_winding:
+                    triangle_vertices[1], triangle_vertices[2] = triangle_vertices[2], triangle_vertices[1]
                 material_triangles.append(tuple(triangle_vertices))  # type: ignore[arg-type]
     return grouped
 

@@ -2,6 +2,7 @@
 
 ## 2026-05-09
 
+- 修复 T800 colored visual mesh 的镜像 DAE winding 问题：训练侧 `.dae` 中右手、右腿等 mirror link 带 determinant 为负的 scene transform，原拆色脚本未翻转三角面顺序，导致 MuJoCo 中局部法线朝里并表现为异常发灰/发黑。`scripts/build_t800_colored_mjcf.py` 现在会检测镜像 transform 并保持 colored STL 与原始 STL 的 winding 方向一致；已重新生成受影响的 `assets/t800/meshes/colored/*.stl`，并新增 `test_t800_colored_mesh_parts_preserve_original_visual_winding` 回归测试。
 - 官方 BVH -> T800 的正式 route `--robot t800` 已切换为当前推广的 `bvh_human_robot_hit_to_t800--mild_two_stage.json`；`--robot t800_transparent` 继续共享同一份 IK config，但只作为透明 MuJoCo XML 的调 IK/视觉排查入口。
 - 调试 JSONL 输出位置整理到 GMR 项目内的 `debug_logs/official/`，例如 `debug_logs\official\official_zhiquan_full_raw_debug_sampled.jsonl`；该目录已加入 `.gitignore`，避免大体积本机日志误提交。
 

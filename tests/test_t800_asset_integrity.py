@@ -48,6 +48,28 @@ def _binary_stl_bbox(path: Path) -> tuple[tuple[float, float, float], tuple[floa
     return tuple(bbox[0]), tuple(bbox[1])  # type: ignore[return-value]
 
 
+def _binary_stl_signed_volume(path: Path) -> float:
+    data = path.read_bytes()
+    triangle_count = struct.unpack_from("<I", data, 80)[0]
+    assert len(data) == 84 + triangle_count * 50
+
+    signed_volume = 0.0
+    offset = 84
+    for _ in range(triangle_count):
+        offset += 12
+        a = struct.unpack_from("<fff", data, offset)
+        b = struct.unpack_from("<fff", data, offset + 12)
+        c = struct.unpack_from("<fff", data, offset + 24)
+        signed_volume += (
+            a[0] * (b[1] * c[2] - b[2] * c[1])
+            - a[1] * (b[0] * c[2] - b[2] * c[0])
+            + a[2] * (b[0] * c[1] - b[1] * c[0])
+        ) / 6.0
+        offset += 38
+
+    return signed_volume
+
+
 def _merge_bboxes(
     bboxes: list[tuple[tuple[float, float, float], tuple[float, float, float]]],
 ) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
@@ -64,6 +86,10 @@ def _max_bbox_abs_diff(
     right: tuple[tuple[float, float, float], tuple[float, float, float]],
 ) -> float:
     return max(abs(left[side][axis] - right[side][axis]) for side in range(2) for axis in range(3))
+
+
+def _same_sign(left: float, right: float) -> bool:
+    return (left > 0 and right > 0) or (left < 0 and right < 0)
 
 
 def test_t800_visual_meshes_keep_source_material_colors() -> None:
@@ -139,3 +165,23 @@ def test_t800_colored_mesh_parts_preserve_original_visual_bounding_boxes() -> No
         colored_bbox = _merge_bboxes([_binary_stl_bbox(path) for path in colored_mesh_files])
 
         assert _max_bbox_abs_diff(original_bbox, colored_bbox) < 1e-6
+
+
+def test_t800_colored_mesh_parts_preserve_original_visual_winding() -> None:
+    tree = ET.parse(T800_XML)
+    root = tree.getroot()
+
+    colored_mesh_files_by_link: dict[str, list[Path]] = {}
+    for mesh in root.findall("./asset/mesh"):
+        mesh_name = mesh.attrib["name"]
+        if "__mat" not in mesh_name:
+            continue
+        link_name = mesh_name.split("__mat", 1)[0]
+        colored_mesh_files_by_link.setdefault(link_name, []).append(T800_MESH_DIR / mesh.attrib["file"])
+
+    assert len(colored_mesh_files_by_link) == 26
+    for link_name, colored_mesh_files in colored_mesh_files_by_link.items():
+        original_volume = _binary_stl_signed_volume(T800_MESH_DIR / f"{link_name}.stl")
+        colored_volume = sum(_binary_stl_signed_volume(path) for path in colored_mesh_files)
+
+        assert _same_sign(original_volume, colored_volume), link_name

@@ -25,6 +25,7 @@
 - 运动学主链来自 `whole_body_tracking_engineai/source/whole_body_tracking/whole_body_tracking/assets/t800/urdf/serial_t800.urdf`。
 - 当前仓库已经从训练侧 `.dae` 批量导出了一份 `assets/t800/meshes/*.stl`，并在 `mujoco/*.xml` 里作为 visual mesh 使用。
 - 为保留训练侧 `.dae` 中的材质颜色，`assets/t800/meshes/colored/*.stl` 是按 DAE material 分组拆出的 visual 子网格；`t800_full_gmr.xml` 和 `t800_full_gmr_transparent.xml` 会优先使用这些 colored 子网格，并用对应材质 `rgba` 显示原始白/黑/灰/橙等表面颜色。
+- 训练侧 `.dae` 中部分左右镜像 link 使用 determinant 为负的 scene transform；重新生成 colored STL 时必须保留原始 visual mesh 的 winding 方向，否则 MuJoCo 中右手、右腿等局部会出现法线朝里导致的异常发灰/发黑。当前 `scripts/build_t800_colored_mjcf.py` 会检测该镜像 transform 并翻转三角面顺序，`tests/test_t800_asset_integrity.py` 会校验 colored 子网格的 bounding box 与 signed volume 符号。
 - `t800_from_urdf.xml`：以工具从 URDF 导出的基线 MJCF 为底稿，再补上 `LINK_BASE/freejoint`、visual mesh、末端 body 和 actuator。
 - `t800_full_gmr.xml`：在 `t800_from_urdf.xml` 上进一步精确对齐了 URDF 的质量/惯量，并给 actuator 补上了基于 URDF effort 的 `ctrlrange/forcerange`；碰撞体已明确拆成两层：`collision_urdf`（group 3，对应训练侧 URDF 原生碰撞）和 `collision_fallback`（group 4，对应无原始 collision link 的补体）。
 - `t800_gmr.xml`：保留了相同 body / joint 命名，但更偏轻量化和历史兼容用途。
