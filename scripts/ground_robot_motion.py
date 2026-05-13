@@ -22,7 +22,24 @@ def main() -> None:
     parser.add_argument("--robot", default=None, choices=sorted(ROBOT_XML_DICT.keys()), help="Robot name from ROBOT_XML_DICT.")
     parser.add_argument("--robot_xml", default=None, help="Explicit MuJoCo XML path. Overrides --robot.")
     parser.add_argument("--clearance", type=float, default=0.002, help="Target minimum support clearance above ground in meters.")
-    parser.add_argument("--mode", choices=["per_frame", "global"], default="per_frame", help="How to apply vertical correction.")
+    parser.add_argument(
+        "--mode",
+        choices=["per_frame", "global", "smooth_per_frame"],
+        default="per_frame",
+        help="How to apply vertical correction.",
+    )
+    parser.add_argument(
+        "--smooth_window",
+        type=int,
+        default=9,
+        help="Moving-average window for --mode smooth_per_frame.",
+    )
+    parser.add_argument(
+        "--smooth_contact_threshold",
+        type=float,
+        default=0.04,
+        help="Only smooth frames whose support min-z is within this height above ground.",
+    )
     args = parser.parse_args()
 
     if args.robot_xml is None and args.robot is None:
@@ -45,6 +62,8 @@ def main() -> None:
         clearance=args.clearance,
         mode=args.mode,
         inplace=False,
+        smooth_window=args.smooth_window,
+        smooth_contact_threshold=args.smooth_contact_threshold,
     )
 
     output_dir = os.path.dirname(output_path)

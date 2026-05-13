@@ -3,11 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
+import mujoco as mj
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from general_motion_retargeting.motion_grounding import align_motion_root_to_ground, compute_support_min_z
+from general_motion_retargeting.motion_grounding import align_motion_root_to_ground, compute_support_min_z, find_support_geom_ids
 
 
 TEST_XML = """<?xml version="1.0" encoding="utf-8"?>
@@ -27,6 +28,8 @@ TEST_XML = """<?xml version="1.0" encoding="utf-8"?>
 </mujoco>
 """
 
+T800_XML = Path(__file__).resolve().parents[1] / "assets" / "t800" / "mujoco" / "t800_full_gmr.xml"
+
 
 def _write_test_xml(tmp_path: Path) -> Path:
     xml_path = tmp_path / "grounding_test.xml"
@@ -44,6 +47,29 @@ def test_compute_support_min_z_reads_box_bottom(tmp_path: Path) -> None:
     )
     assert min_z.shape == (1,)
     assert np.isclose(min_z[0], -0.01)
+
+
+def test_t800_support_geoms_match_training_ankle_roll_foot_boxes() -> None:
+    model = mj.MjModel.from_xml_path(str(T800_XML))
+
+    support_ids = find_support_geom_ids(model)
+    support_bodies = {
+        mj.mj_id2name(model, mj.mjtObj.mjOBJ_BODY, model.geom_bodyid[geom_id])
+        for geom_id in support_ids
+    }
+    support_groups = {int(model.geom_group[geom_id]) for geom_id in support_ids}
+    fallback_bodies = {
+        mj.mj_id2name(model, mj.mjtObj.mjOBJ_BODY, model.geom_bodyid[geom_id])
+        for geom_id in range(model.ngeom)
+        if int(model.geom_group[geom_id]) == 4
+    }
+
+    assert support_bodies == {"LINK_ANKLE_ROLL_L", "LINK_ANKLE_ROLL_R"}
+    assert support_groups == {3}
+    assert len(support_ids) == 2
+    assert {"LINK_ANKLE_PITCH_L", "LINK_ANKLE_PITCH_R"}.issubset(fallback_bodies)
+    assert "LINK_ANKLE_PITCH_L" not in support_bodies
+    assert "LINK_ANKLE_PITCH_R" not in support_bodies
 
 
 def test_align_motion_root_to_ground_per_frame_removes_penetration(tmp_path: Path) -> None:
@@ -88,3 +114,58 @@ def test_align_motion_root_to_ground_global_uses_single_shift(tmp_path: Path) ->
 
     assert np.allclose(grounded["root_pos"][:, 2], np.array([0.022, 0.042]))
     assert stats["applied_shift_max"] == stats["applied_shift_median"]
+
+
+def test_align_motion_root_to_ground_smooth_per_frame_is_gated_and_smoother_than_hard_snap(tmp_path: Path) -> None:
+    xml_path = _write_test_xml(tmp_path)
+    original_root_z = np.array([0.02, 0.05, 0.022, 0.20, 0.024], dtype=np.float64)
+    motion = {
+        "fps": 30,
+        "root_pos": np.column_stack(
+            [
+                np.zeros_like(original_root_z),
+                np.zeros_like(original_root_z),
+                original_root_z,
+            ]
+        ),
+        "root_rot": np.tile(np.array([[0.0, 0.0, 0.0, 1.0]], dtype=np.float64), (original_root_z.size, 1)),
+        "dof_pos": np.zeros((original_root_z.size, 0), dtype=np.float64),
+    }
+
+    global_grounded, global_stats = align_motion_root_to_ground(
+        motion_data=motion,
+        model_or_path=xml_path,
+        clearance=0.0,
+        mode="global",
+        inplace=False,
+    )
+    smooth_grounded, smooth_stats = align_motion_root_to_ground(
+        motion_data=motion,
+        model_or_path=xml_path,
+        clearance=0.0,
+        mode="smooth_per_frame",
+        inplace=False,
+        smooth_window=3,
+        smooth_contact_threshold=0.04,
+    )
+
+    applied_shift = smooth_grounded["root_pos"][:, 2] - original_root_z
+    exact_signed_shift = 0.0 - (original_root_z - 0.02)
+    after_min_z = compute_support_min_z(
+        model_or_path=xml_path,
+        root_pos=smooth_grounded["root_pos"],
+        root_rot=smooth_grounded["root_rot"],
+        dof_pos=smooth_grounded["dof_pos"],
+    )
+
+    assert np.allclose(global_grounded["root_pos"][:, 2], original_root_z)
+    assert smooth_stats["mode"] == "smooth_per_frame"
+    assert smooth_stats["smooth_window"] == 3
+    assert smooth_stats["smooth_contact_threshold"] == 0.04
+    assert smooth_stats["smooth_contact_candidate_frames"] == 4
+    assert smooth_stats["after_min_support_z"] >= -1e-9
+    assert np.any(applied_shift < 0.0)
+    assert np.isclose(applied_shift[3], 0.0)
+    assert not np.allclose(applied_shift, applied_shift[0])
+    assert np.max(np.abs(np.diff(applied_shift))) < np.max(np.abs(np.diff(exact_signed_shift)))
+    assert np.median(after_min_z) < global_stats["after_median_support_z"]

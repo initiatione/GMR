@@ -296,7 +296,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--foot-ground-mode",
-        choices=["per_frame", "global"],
+        choices=["per_frame", "global", "smooth_per_frame"],
         default="per_frame",
         help="Vertical grounding strategy applied to saved motion.",
     )
@@ -305,6 +305,18 @@ if __name__ == "__main__":
         type=float,
         default=0.002,
         help="Target minimum support clearance above ground in meters for saved motion.",
+    )
+    parser.add_argument(
+        "--foot-ground-smooth-window",
+        type=int,
+        default=9,
+        help="Moving-average window used by --foot-ground-mode smooth_per_frame.",
+    )
+    parser.add_argument(
+        "--foot-ground-smooth-contact-threshold",
+        type=float,
+        default=0.04,
+        help="Only smooth support-height candidates below this threshold in smooth_per_frame mode.",
     )
     parser.add_argument(
         "--contact-aware-postprocess",
@@ -340,7 +352,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--contact-ground-mode",
-        choices=["per_frame", "global"],
+        choices=["per_frame", "global", "smooth_per_frame"],
         default=None,
         help="Expert override: grounding mode used inside the contact-aware postprocess.",
     )
@@ -514,6 +526,8 @@ if __name__ == "__main__":
                 clearance=args.foot_ground_clearance,
                 mode=args.foot_ground_mode,
                 inplace=False,
+                smooth_window=args.foot_ground_smooth_window,
+                smooth_contact_threshold=args.foot_ground_smooth_contact_threshold,
             )
             print("[foot_ground_align]", grounding_stats)
         with open(args.save_path, "wb") as f:

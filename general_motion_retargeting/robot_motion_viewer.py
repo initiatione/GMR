@@ -2,9 +2,9 @@ import os
 import time
 import mujoco as mj
 import mujoco.viewer as mjv
-import imageio
 from scipy.spatial.transform import Rotation as R
 from general_motion_retargeting import ROBOT_XML_DICT, ROBOT_BASE_DICT, VIEWER_CAM_DISTANCE_DICT
+from general_motion_retargeting.motion_grounding import find_support_geom_ids
 from loop_rate_limiters import RateLimiter
 import numpy as np
 from rich import print
@@ -54,11 +54,17 @@ class RobotMotionViewer:
                 video_width=640,
                 video_height=480,
                 keyboard_callback=None,
+                show_left_ui=False,
+                show_right_ui=False,
+                highlight_support_geoms=False,
                 ):
         
         self.robot_type = robot_type
         self.xml_path = ROBOT_XML_DICT[robot_type]
         self.model = mj.MjModel.from_xml_path(str(self.xml_path))
+        self.highlighted_support_groups: set[int] = set()
+        if highlight_support_geoms:
+            self._highlight_support_geoms()
         self.data = mj.MjData(self.model)
         self.robot_base = ROBOT_BASE_DICT[robot_type]
         self.viewer_cam_distance = VIEWER_CAM_DISTANCE_DICT[robot_type]
@@ -73,14 +79,18 @@ class RobotMotionViewer:
         self.viewer = mjv.launch_passive(
             model=self.model,
             data=self.data,
-            show_left_ui=False,
-            show_right_ui=False, 
+            show_left_ui=show_left_ui,
+            show_right_ui=show_right_ui,
             key_callback=keyboard_callback
             )      
 
-        self.viewer.opt.flags[mj.mjtVisFlag.mjVIS_TRANSPARENT] = transparent_robot
+        self.viewer.opt.flags[mj.mjtVisFlag.mjVIS_TRANSPARENT] = transparent_robot or highlight_support_geoms
+        for group_id in self.highlighted_support_groups:
+            self.viewer.opt.geomgroup[group_id] = 1
         
         if self.record_video:
+            import imageio
+
             assert video_path is not None, "Please provide video path for recording"
             self.video_path = video_path
             video_dir = os.path.dirname(self.video_path)
@@ -92,6 +102,17 @@ class RobotMotionViewer:
             
             # Initialize renderer for video recording
             self.renderer = mj.Renderer(self.model, height=video_height, width=video_width)
+
+    def _highlight_support_geoms(self):
+        support_geom_ids = find_support_geom_ids(self.model)
+        colors = (
+            np.array([1.0, 0.1, 0.1, 0.65], dtype=np.float32),
+            np.array([0.1, 1.0, 0.1, 0.65], dtype=np.float32),
+        )
+        for index, geom_id in enumerate(support_geom_ids):
+            self.model.geom_rgba[geom_id] = colors[index % len(colors)]
+            self.highlighted_support_groups.add(int(self.model.geom_group[geom_id]))
+        print(f"Highlighted support geoms: {support_geom_ids}")
         
     def step(self, 
             # robot data

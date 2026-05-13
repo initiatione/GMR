@@ -26,6 +26,27 @@ if __name__ == "__main__":
     parser.add_argument("--record_video", action="store_true")
     parser.add_argument("--video_path", type=str, 
                         default="videos/example.mp4")
+    parser.add_argument(
+        "--camera_mode",
+        choices=["follow", "free"],
+        default="follow",
+        help="Camera behavior: follow resets the view to the robot each frame; free keeps manual MuJoCo camera control.",
+    )
+    parser.add_argument(
+        "--show_right_ui",
+        action="store_true",
+        help="Show MuJoCo right-side UI for joint/control panels.",
+    )
+    parser.add_argument(
+        "--show_left_ui",
+        action="store_true",
+        help="Show MuJoCo left-side UI for rendering and geom-group controls.",
+    )
+    parser.add_argument(
+        "--highlight_support_geoms",
+        action="store_true",
+        help="Highlight the support geoms used by grounding with visible red/green translucent colors.",
+    )
                         
     args = parser.parse_args()
     
@@ -59,7 +80,10 @@ if __name__ == "__main__":
                             motion_fps=motion_fps,
                             camera_follow=False,
                             record_video=args.record_video, video_path=args.video_path, 
-                            keyboard_callback=keyboard_callback)
+                            keyboard_callback=keyboard_callback,
+                            show_left_ui=args.show_left_ui,
+                            show_right_ui=args.show_right_ui,
+                            highlight_support_geoms=args.highlight_support_geoms)
     
     frame_idx = 0
     while True:
@@ -80,7 +104,8 @@ if __name__ == "__main__":
             env.step(motion_root_pos[frame_idx], 
                     motion_root_rot[frame_idx], 
                     motion_dof_pos[frame_idx], 
-                    rate_limit=True)
+                    rate_limit=True,
+                    follow_camera=args.camera_mode == "follow")
             frame_idx += 1
             if frame_idx >= len(motion_root_pos):
                 frame_idx = 0

@@ -21,6 +21,9 @@ import numpy as np
 
 
 SUPPORT_KEYWORDS: tuple[str, ...] = ("foot", "ankle", "toe", "sole")
+T800_TRAINING_FOOT_SUPPORT_BODIES: tuple[str, ...] = ("LINK_ANKLE_ROLL_L", "LINK_ANKLE_ROLL_R")
+T800_MUJOCO_GROUP_COLLISION_URDF = 3
+GROUNDING_MODES: tuple[str, ...] = ("per_frame", "global", "smooth_per_frame")
 
 
 def _as_model(model_or_path: mj.MjModel | str | Path) -> mj.MjModel:
@@ -47,10 +50,47 @@ def find_support_geom_ids(
     这里故意只扫描开启接触的 geom：
     - visual mesh / decoration 不应参与 grounding；
     - 真正影响训练接触的是碰撞体，而不是外观网格。
-    """
-    support_geom_ids: list[int] = []
-    normalized_keywords = tuple(str(keyword).lower() for keyword in keywords)
 
+    对 T800 这类从训练侧 URDF 转出的 MJCF，优先使用 `collision_urdf`
+    脚底盒，而不是 GMR 为 IK/debug 额外补的 `collision_fallback`。
+    这样 grounding 的脚底定义和 Isaac/训练侧保持一致。
+    """
+    normalized_keywords = tuple(str(keyword).lower() for keyword in keywords)
+    t800_training_foot_bodies = set(T800_TRAINING_FOOT_SUPPORT_BODIES)
+    model_body_names = {
+        name
+        for body_id in range(model.nbody)
+        if (name := mj.mj_id2name(model, mj.mjtObj.mjOBJ_BODY, body_id))
+    }
+    t800_like_model = t800_training_foot_bodies.issubset(model_body_names)
+
+    training_foot_support_ids: list[int] = []
+    training_foot_support_bodies: set[str] = set()
+    for geom_id in range(model.ngeom):
+        if model.geom_contype[geom_id] == 0 or model.geom_conaffinity[geom_id] == 0:
+            continue
+        if int(model.geom_group[geom_id]) != T800_MUJOCO_GROUP_COLLISION_URDF:
+            continue
+
+        body_name = mj.mj_id2name(model, mj.mjtObj.mjOBJ_BODY, model.geom_bodyid[geom_id]) or ""
+        if body_name in t800_training_foot_bodies:
+            training_foot_support_ids.append(geom_id)
+            training_foot_support_bodies.add(body_name)
+
+    if t800_like_model:
+        if training_foot_support_bodies == t800_training_foot_bodies:
+            return training_foot_support_ids
+        missing_bodies = sorted(t800_training_foot_bodies - training_foot_support_bodies)
+        raise ValueError(
+            "Failed to find T800 training-side foot support geoms. "
+            f"Missing collision_urdf group={T800_MUJOCO_GROUP_COLLISION_URDF} "
+            f"support bodies={missing_bodies}."
+        )
+
+    if training_foot_support_ids:
+        return training_foot_support_ids
+
+    support_geom_ids: list[int] = []
     for geom_id in range(model.ngeom):
         # 没有碰撞属性的 geom 即使名字像脚，也不会参与地面接触，不该被拿来做校正基准。
         if model.geom_contype[geom_id] == 0 or model.geom_conaffinity[geom_id] == 0:
@@ -176,6 +216,43 @@ def summarize_support_min_z(support_min_z: np.ndarray, clearance: float = 0.0) -
     }
 
 
+def _smooth_signal_segmentwise(values: np.ndarray, mask: np.ndarray, window: int) -> np.ndarray:
+    """Smooth only inside contiguous true segments, leaving non-candidate frames unchanged."""
+    values = np.asarray(values, dtype=np.float64)
+    mask = np.asarray(mask, dtype=bool)
+    window = int(window)
+    smoothed = values.copy()
+    if window <= 1 or values.shape[0] <= 2:
+        return smoothed
+
+    start = None
+    for idx, active in enumerate(mask):
+        if active and start is None:
+            start = idx
+        if not active and start is not None:
+            _smooth_one_segment(smoothed, values, start, idx, window)
+            start = None
+    if start is not None:
+        _smooth_one_segment(smoothed, values, start, values.shape[0], window)
+    return smoothed
+
+
+def _smooth_one_segment(output: np.ndarray, values: np.ndarray, start: int, end: int, window: int) -> None:
+    segment = values[start:end]
+    if segment.shape[0] <= 1:
+        return
+
+    effective_window = min(int(window), int(segment.shape[0]))
+    if effective_window <= 1:
+        return
+
+    pad_left = effective_window // 2
+    pad_right = effective_window - 1 - pad_left
+    kernel = np.ones(effective_window, dtype=np.float64) / float(effective_window)
+    padded = np.pad(segment, (pad_left, pad_right), mode="edge")
+    output[start:end] = np.convolve(padded, kernel, mode="valid")
+
+
 def align_motion_root_to_ground(
     motion_data: dict,
     model_or_path: mj.MjModel | str | Path,
@@ -183,17 +260,22 @@ def align_motion_root_to_ground(
     mode: str = "per_frame",
     inplace: bool = False,
     support_geom_ids: Iterable[int] | None = None,
+    smooth_window: int = 9,
+    smooth_contact_threshold: float = 0.04,
 ) -> tuple[dict, dict[str, float]]:
     """Raise root z so support geoms stay above the ground plane.
 
     mode 的区别：
     - per_frame: 每一帧独立补偿。修得最干净，但会更强地改变竖直轨迹；
     - global:    整段动作统一上抬一个常数。对训练分布更保守，但不能消除“相对抖动”。
+    - smooth_per_frame:
+                 只在接近地面的候选支撑段里做带符号、分段平滑的 root-z 修正。
+                 它不会把明显腾空帧硬拉回地面，适合生成需要人工 replay 验收的候选。
 
     这个函数只改 root z，不改关节角。
     所以它适合作为“数据修复/导出后处理”，而不是完整的接触一致性求解器。
     """
-    if mode not in {"per_frame", "global"}:
+    if mode not in set(GROUNDING_MODES):
         raise ValueError(f"Unsupported grounding mode: {mode}")
 
     if inplace:
@@ -223,10 +305,29 @@ def align_motion_root_to_ground(
         # 用全局最大需求量把整段轨迹一起抬高。
         # 这样不会引入逐帧 root z 变化，但会保留原始动作里“脚相对地面忽上忽下”的内部误差。
         applied_shift = np.full_like(raw_shift, np.max(raw_shift))
-    else:
+    elif mode == "per_frame":
         # 逐帧单独修正，能把每一帧都拉回到期望 clearance 上方。
         # 代价是对 base 高度、竖直速度、COM 轨迹的修改更强。
         applied_shift = raw_shift
+    else:
+        # smooth_per_frame 是给“疑似接地但整体偏高”的 PKL 做候选修复，不是强制接触求解。
+        # 只有 support min-z 接近地面时才允许向下贴合；明显腾空帧保持原样，避免抹掉踮脚、
+        # 摆腿、起跳等原动作语义。穿地帧仍然保留向上修正，防止生成物理上更差的候选。
+        contact_threshold = max(float(smooth_contact_threshold), float(clearance))
+        contact_candidate = before_min_z <= contact_threshold
+        signed_target_shift = np.zeros_like(before_min_z)
+        signed_target_shift[contact_candidate] = float(clearance) - before_min_z[contact_candidate]
+        applied_shift = _smooth_signal_segmentwise(
+            values=signed_target_shift,
+            mask=contact_candidate,
+            window=int(smooth_window),
+        )
+        applied_shift[~contact_candidate] = 0.0
+
+        # 平滑可能把局部穿地帧的上抬量摊薄。这里只夹到“不低于 clearance”，
+        # 不把所有负向修正都清掉，否则就无法修复“接近地面但整体偏高”的悬空。
+        minimum_nonpenetration_shift = float(clearance) - before_min_z
+        applied_shift = np.maximum(applied_shift, minimum_nonpenetration_shift)
 
     root_pos[:, 2] += applied_shift
 
@@ -247,9 +348,19 @@ def align_motion_root_to_ground(
         "before_median_support_z": float(np.median(before_min_z)),
         "before_penetrating_frames": int(np.count_nonzero(before_min_z < 0.0)),
         "applied_shift_max": float(np.max(applied_shift)),
+        "applied_shift_min": float(np.min(applied_shift)),
         "applied_shift_median": float(np.median(applied_shift)),
+        "applied_shift_max_step": float(np.max(np.abs(np.diff(applied_shift)))) if applied_shift.shape[0] > 1 else 0.0,
         "after_min_support_z": float(np.min(after_min_z)),
         "after_median_support_z": float(np.median(after_min_z)),
         "after_penetrating_frames": int(np.count_nonzero(after_min_z < -1e-6)),
     }
+    if mode == "smooth_per_frame":
+        stats.update(
+            {
+                "smooth_window": int(smooth_window),
+                "smooth_contact_threshold": float(smooth_contact_threshold),
+                "smooth_contact_candidate_frames": int(np.count_nonzero(contact_candidate)),
+            }
+        )
     return grounded_motion, stats
