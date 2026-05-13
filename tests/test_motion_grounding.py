@@ -8,7 +8,12 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from general_motion_retargeting.motion_grounding import align_motion_root_to_ground, compute_support_min_z, find_support_geom_ids
+from general_motion_retargeting.motion_grounding import (
+    align_motion_root_to_ground,
+    compute_support_min_z,
+    find_support_geom_ids,
+    save_grounding_diagnostics_plot,
+)
 
 
 TEST_XML = """<?xml version="1.0" encoding="utf-8"?>
@@ -169,3 +174,91 @@ def test_align_motion_root_to_ground_smooth_per_frame_is_gated_and_smoother_than
     assert not np.allclose(applied_shift, applied_shift[0])
     assert np.max(np.abs(np.diff(applied_shift))) < np.max(np.abs(np.diff(exact_signed_shift)))
     assert np.median(after_min_z) < global_stats["after_median_support_z"]
+
+
+def test_align_motion_root_to_ground_contact_lowfreq_limits_root_z_pumping(tmp_path: Path) -> None:
+    xml_path = _write_test_xml(tmp_path)
+    original_root_z = np.array([0.010, 0.040, 0.012, 0.038, 0.011, 0.039, 0.013], dtype=np.float64)
+    motion = {
+        "fps": 30,
+        "root_pos": np.column_stack(
+            [
+                np.zeros_like(original_root_z),
+                np.zeros_like(original_root_z),
+                original_root_z,
+            ]
+        ),
+        "root_rot": np.tile(np.array([[0.0, 0.0, 0.0, 1.0]], dtype=np.float64), (original_root_z.size, 1)),
+        "dof_pos": np.zeros((original_root_z.size, 0), dtype=np.float64),
+    }
+
+    per_frame_grounded, per_frame_stats = align_motion_root_to_ground(
+        motion_data=motion,
+        model_or_path=xml_path,
+        clearance=0.0,
+        mode="per_frame",
+        inplace=False,
+    )
+    lowfreq_grounded, lowfreq_stats = align_motion_root_to_ground(
+        motion_data=motion,
+        model_or_path=xml_path,
+        clearance=0.0,
+        mode="contact_lowfreq",
+        inplace=False,
+        smooth_window=5,
+        smooth_contact_threshold=0.04,
+        max_shift_step=0.006,
+    )
+
+    per_frame_shift = per_frame_grounded["root_pos"][:, 2] - original_root_z
+    lowfreq_shift = lowfreq_grounded["root_pos"][:, 2] - original_root_z
+    after_min_z = compute_support_min_z(
+        model_or_path=xml_path,
+        root_pos=lowfreq_grounded["root_pos"],
+        root_rot=lowfreq_grounded["root_rot"],
+        dof_pos=lowfreq_grounded["dof_pos"],
+    )
+
+    assert lowfreq_stats["mode"] == "contact_lowfreq"
+    assert lowfreq_stats["max_shift_step"] == 0.006
+    assert lowfreq_stats["after_penetrating_frames"] == 0
+    assert lowfreq_stats["after_min_support_z"] >= -1e-9
+    assert np.max(np.abs(np.diff(lowfreq_shift))) <= 0.006 + 1e-9
+    assert np.max(np.abs(np.diff(lowfreq_shift))) < np.max(np.abs(np.diff(per_frame_shift)))
+    assert lowfreq_stats["applied_shift_max_step"] < per_frame_stats["applied_shift_max_step"]
+    assert np.std(lowfreq_shift) < np.std(per_frame_shift)
+
+
+def test_save_grounding_diagnostics_plot_writes_png(tmp_path: Path) -> None:
+    xml_path = _write_test_xml(tmp_path)
+    original_root_z = np.array([0.010, 0.040, 0.012, 0.038], dtype=np.float64)
+    motion = {
+        "fps": 30,
+        "root_pos": np.column_stack(
+            [
+                np.zeros_like(original_root_z),
+                np.zeros_like(original_root_z),
+                original_root_z,
+            ]
+        ),
+        "root_rot": np.tile(np.array([[0.0, 0.0, 0.0, 1.0]], dtype=np.float64), (original_root_z.size, 1)),
+        "dof_pos": np.zeros((original_root_z.size, 0), dtype=np.float64),
+    }
+
+    _, stats = align_motion_root_to_ground(
+        motion_data=motion,
+        model_or_path=xml_path,
+        clearance=0.0,
+        mode="contact_lowfreq",
+        inplace=False,
+        smooth_window=3,
+        max_shift_step=0.006,
+        return_diagnostics=True,
+    )
+    diagnostics = stats["diagnostics"]
+    plot_path = tmp_path / "grounding_curves.png"
+
+    save_grounding_diagnostics_plot(plot_path, diagnostics, title="test plot")
+
+    assert plot_path.exists()
+    assert plot_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")

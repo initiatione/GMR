@@ -11,7 +11,11 @@ if str(REPO_ROOT) not in sys.path:
 from general_motion_retargeting import GeneralMotionRetargeting as GMR
 from general_motion_retargeting import RobotMotionViewer
 from general_motion_retargeting.motion_contact_postprocess import apply_contact_aware_postprocess, build_contact_aware_config
-from general_motion_retargeting.motion_grounding import align_motion_root_to_ground
+from general_motion_retargeting.motion_grounding import (
+    GROUNDING_MODES,
+    align_motion_root_to_ground,
+    save_grounding_diagnostics_plot,
+)
 from general_motion_retargeting.motion_retarget_options import (
     calibrate_human_robot_hit_frames,
     resolve_actual_human_height,
@@ -296,7 +300,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--foot-ground-mode",
-        choices=["per_frame", "global", "smooth_per_frame"],
+        choices=list(GROUNDING_MODES),
         default="per_frame",
         help="Vertical grounding strategy applied to saved motion.",
     )
@@ -317,6 +321,17 @@ if __name__ == "__main__":
         type=float,
         default=0.04,
         help="Only smooth support-height candidates below this threshold in smooth_per_frame mode.",
+    )
+    parser.add_argument(
+        "--foot-ground-max-shift-step",
+        type=float,
+        default=None,
+        help="Maximum adjacent-frame root-z correction step in meters for --foot-ground-mode contact_lowfreq.",
+    )
+    parser.add_argument(
+        "--foot-ground-plot-path",
+        default=None,
+        help="Optional PNG path for before/after root_z, support_min_z, and applied_shift curves.",
     )
     parser.add_argument(
         "--contact-aware-postprocess",
@@ -352,7 +367,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--contact-ground-mode",
-        choices=["per_frame", "global", "smooth_per_frame"],
+        choices=list(GROUNDING_MODES),
         default=None,
         help="Expert override: grounding mode used inside the contact-aware postprocess.",
     )
@@ -528,7 +543,19 @@ if __name__ == "__main__":
                 inplace=False,
                 smooth_window=args.foot_ground_smooth_window,
                 smooth_contact_threshold=args.foot_ground_smooth_contact_threshold,
+                max_shift_step=args.foot_ground_max_shift_step,
+                return_diagnostics=args.foot_ground_plot_path is not None,
             )
+            diagnostics = grounding_stats.pop("diagnostics", None)
+            if args.foot_ground_plot_path is not None:
+                if diagnostics is None:
+                    raise RuntimeError("Grounding diagnostics were not returned; cannot write --foot-ground-plot-path.")
+                save_grounding_diagnostics_plot(
+                    plot_path=args.foot_ground_plot_path,
+                    diagnostics=diagnostics,
+                    title=f"{pathlib.Path(args.save_path).name} -> {args.foot_ground_mode}",
+                )
+                print(f"[foot_ground_align] saved plot to {args.foot_ground_plot_path}")
             print("[foot_ground_align]", grounding_stats)
         with open(args.save_path, "wb") as f:
             pickle.dump(motion_data, f)

@@ -9,7 +9,11 @@ if str(HERE) not in sys.path:
     # 允许从仓库根目录直接运行脚本，而不要求先安装成 site-package。
     sys.path.insert(0, str(HERE))
 
-from general_motion_retargeting.motion_grounding import align_motion_root_to_ground
+from general_motion_retargeting.motion_grounding import (
+    GROUNDING_MODES,
+    align_motion_root_to_ground,
+    save_grounding_diagnostics_plot,
+)
 from general_motion_retargeting.params import ROBOT_XML_DICT
 
 
@@ -24,7 +28,7 @@ def main() -> None:
     parser.add_argument("--clearance", type=float, default=0.002, help="Target minimum support clearance above ground in meters.")
     parser.add_argument(
         "--mode",
-        choices=["per_frame", "global", "smooth_per_frame"],
+        choices=list(GROUNDING_MODES),
         default="per_frame",
         help="How to apply vertical correction.",
     )
@@ -39,6 +43,17 @@ def main() -> None:
         type=float,
         default=0.04,
         help="Only smooth frames whose support min-z is within this height above ground.",
+    )
+    parser.add_argument(
+        "--max_shift_step",
+        type=float,
+        default=None,
+        help="Maximum adjacent-frame root-z correction step in meters for --mode contact_lowfreq.",
+    )
+    parser.add_argument(
+        "--plot_path",
+        default=None,
+        help="Optional PNG path for before/after root_z, support_min_z, and applied_shift curves.",
     )
     args = parser.parse_args()
 
@@ -64,7 +79,10 @@ def main() -> None:
         inplace=False,
         smooth_window=args.smooth_window,
         smooth_contact_threshold=args.smooth_contact_threshold,
+        max_shift_step=args.max_shift_step,
+        return_diagnostics=args.plot_path is not None,
     )
+    diagnostics = stats.pop("diagnostics", None)
 
     output_dir = os.path.dirname(output_path)
     if output_dir:
@@ -74,6 +92,16 @@ def main() -> None:
         pickle.dump(grounded_motion, f)
 
     print(f"Saved grounded motion to {output_path}")
+    if args.plot_path is not None:
+        if diagnostics is None:
+            raise RuntimeError("Grounding diagnostics were not returned; cannot write --plot_path.")
+        save_grounding_diagnostics_plot(
+            plot_path=args.plot_path,
+            diagnostics=diagnostics,
+            title=f"{pathlib.Path(args.input).name} -> {args.mode}",
+        )
+        print(f"Saved grounding plot to {args.plot_path}")
+
     # 把关键统计直接打印出来，方便判断这次修复是不是“轻微对齐”还是“重度纠偏”。
     for key, value in stats.items():
         if isinstance(value, float):

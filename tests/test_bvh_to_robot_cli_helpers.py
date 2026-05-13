@@ -80,6 +80,26 @@ def test_bvh_to_robot_script_help_runs_from_repo_root() -> None:
     assert result.returncode == 0, result.stderr
     assert "--bvh_file" in result.stdout
     assert "--max_iter" in result.stdout
+    assert "contact_lowfreq" in result.stdout
+    assert "--foot-ground-max-shift-step" in result.stdout
+    assert "--foot-ground-plot-path" in result.stdout
+
+
+def test_ground_robot_motion_script_help_exposes_plot_and_lowfreq_mode() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    result = subprocess.run(
+        [sys.executable, "scripts/ground_robot_motion.py", "--help"],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        timeout=15,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "--plot_path" in result.stdout
+    assert "--max_shift_step" in result.stdout
+    assert "contact_lowfreq" in result.stdout
 
 
 def test_build_retargeter_forwards_max_iter(monkeypatch) -> None:

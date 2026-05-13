@@ -23,7 +23,8 @@ import numpy as np
 SUPPORT_KEYWORDS: tuple[str, ...] = ("foot", "ankle", "toe", "sole")
 T800_TRAINING_FOOT_SUPPORT_BODIES: tuple[str, ...] = ("LINK_ANKLE_ROLL_L", "LINK_ANKLE_ROLL_R")
 T800_MUJOCO_GROUP_COLLISION_URDF = 3
-GROUNDING_MODES: tuple[str, ...] = ("per_frame", "global", "smooth_per_frame")
+GROUNDING_MODES: tuple[str, ...] = ("per_frame", "global", "smooth_per_frame", "contact_lowfreq")
+DEFAULT_MAX_SHIFT_STEP = 0.006
 
 
 def _as_model(model_or_path: mj.MjModel | str | Path) -> mj.MjModel:
@@ -253,6 +254,32 @@ def _smooth_one_segment(output: np.ndarray, values: np.ndarray, start: int, end:
     output[start:end] = np.convolve(padded, kernel, mode="valid")
 
 
+def _enforce_max_step_by_lifting(values: np.ndarray, max_step: float) -> np.ndarray:
+    """Return a signal whose adjacent-frame delta is bounded by raising neighbors.
+
+    这里不通过削低峰值来满足步长限制，因为峰值可能是“避免穿地”的必要上抬量。
+    做法是把峰值影响低频地摊到前后帧，宁可多保留一点整体 lift，也不逐帧追地面。
+    """
+    values = np.asarray(values, dtype=np.float64).copy()
+    max_step = float(max_step)
+    if values.shape[0] <= 1:
+        return values
+    if max_step <= 0.0:
+        raise ValueError("max_shift_step must be greater than 0.")
+
+    for idx in range(1, values.shape[0]):
+        min_allowed = values[idx - 1] - max_step
+        if values[idx] < min_allowed:
+            values[idx] = min_allowed
+
+    for idx in range(values.shape[0] - 2, -1, -1):
+        min_allowed = values[idx + 1] - max_step
+        if values[idx] < min_allowed:
+            values[idx] = min_allowed
+
+    return values
+
+
 def align_motion_root_to_ground(
     motion_data: dict,
     model_or_path: mj.MjModel | str | Path,
@@ -262,7 +289,9 @@ def align_motion_root_to_ground(
     support_geom_ids: Iterable[int] | None = None,
     smooth_window: int = 9,
     smooth_contact_threshold: float = 0.04,
-) -> tuple[dict, dict[str, float]]:
+    max_shift_step: float | None = None,
+    return_diagnostics: bool = False,
+) -> tuple[dict, dict[str, object]]:
     """Raise root z so support geoms stay above the ground plane.
 
     mode 的区别：
@@ -271,6 +300,9 @@ def align_motion_root_to_ground(
     - smooth_per_frame:
                  只在接近地面的候选支撑段里做带符号、分段平滑的 root-z 修正。
                  它不会把明显腾空帧硬拉回地面，适合生成需要人工 replay 验收的候选。
+    - contact_lowfreq:
+                 先估计必须上抬的非穿地包络，再用每帧最大变化量限制 root-z 修正。
+                 它比 per_frame 更少追逐逐帧脚底高度，适合排查 root-z 上下浮动。
 
     这个函数只改 root z，不改关节角。
     所以它适合作为“数据修复/导出后处理”，而不是完整的接触一致性求解器。
@@ -289,6 +321,7 @@ def align_motion_root_to_ground(
     root_pos = grounded_motion["root_pos"]
     root_rot = grounded_motion["root_rot"]
     dof_pos = grounded_motion["dof_pos"]
+    root_z_before = np.asarray(root_pos[:, 2], dtype=np.float64).copy()
 
     support_ids = list(support_geom_ids) if support_geom_ids is not None else find_support_geom_ids(_as_model(model_or_path))
 
@@ -309,7 +342,7 @@ def align_motion_root_to_ground(
         # 逐帧单独修正，能把每一帧都拉回到期望 clearance 上方。
         # 代价是对 base 高度、竖直速度、COM 轨迹的修改更强。
         applied_shift = raw_shift
-    else:
+    elif mode == "smooth_per_frame":
         # smooth_per_frame 是给“疑似接地但整体偏高”的 PKL 做候选修复，不是强制接触求解。
         # 只有 support min-z 接近地面时才允许向下贴合；明显腾空帧保持原样，避免抹掉踮脚、
         # 摆腿、起跳等原动作语义。穿地帧仍然保留向上修正，防止生成物理上更差的候选。
@@ -327,6 +360,32 @@ def align_motion_root_to_ground(
         # 平滑可能把局部穿地帧的上抬量摊薄。这里只夹到“不低于 clearance”，
         # 不把所有负向修正都清掉，否则就无法修复“接近地面但整体偏高”的悬空。
         minimum_nonpenetration_shift = float(clearance) - before_min_z
+        applied_shift = np.maximum(applied_shift, minimum_nonpenetration_shift)
+    else:
+        # contact_lowfreq 的目标不是“每帧精确贴地”，而是生成一条低频 root-z 修正曲线。
+        # 穿地帧给出必须满足的上抬下界；近地悬空帧允许低频向下贴合；明显腾空帧不追。
+        contact_threshold = max(float(smooth_contact_threshold), float(clearance))
+        contact_candidate = before_min_z <= contact_threshold
+        signed_target_shift = np.zeros_like(before_min_z)
+        signed_target_shift[contact_candidate] = float(clearance) - before_min_z[contact_candidate]
+
+        applied_shift = _smooth_signal_segmentwise(
+            values=signed_target_shift,
+            mask=contact_candidate,
+            window=int(smooth_window),
+        )
+        applied_shift[~contact_candidate] = 0.0
+
+        minimum_nonpenetration_shift = np.where(
+            contact_candidate,
+            float(clearance) - before_min_z,
+            0.0,
+        )
+        applied_shift = np.maximum(applied_shift, minimum_nonpenetration_shift)
+        applied_shift = _enforce_max_step_by_lifting(
+            applied_shift,
+            DEFAULT_MAX_SHIFT_STEP if max_shift_step is None else float(max_shift_step),
+        )
         applied_shift = np.maximum(applied_shift, minimum_nonpenetration_shift)
 
     root_pos[:, 2] += applied_shift
@@ -363,4 +422,190 @@ def align_motion_root_to_ground(
                 "smooth_contact_candidate_frames": int(np.count_nonzero(contact_candidate)),
             }
         )
+    if mode == "contact_lowfreq":
+        stats.update(
+            {
+                "smooth_window": int(smooth_window),
+                "smooth_contact_threshold": float(smooth_contact_threshold),
+                "smooth_contact_candidate_frames": int(np.count_nonzero(contact_candidate)),
+                "max_shift_step": float(DEFAULT_MAX_SHIFT_STEP if max_shift_step is None else max_shift_step),
+            }
+        )
+    if return_diagnostics:
+        stats["diagnostics"] = {
+            "frame_index": np.arange(root_pos.shape[0], dtype=np.int64),
+            "root_z_before": root_z_before,
+            "root_z_after": np.asarray(root_pos[:, 2], dtype=np.float64).copy(),
+            "support_min_z_before": before_min_z.copy(),
+            "support_min_z_after": after_min_z.copy(),
+            "applied_shift": applied_shift.copy(),
+            "clearance": float(clearance),
+            "mode": mode,
+        }
     return grounded_motion, stats
+
+
+def _plot_range(*series: np.ndarray, extra_values: Sequence[float] = ()) -> tuple[float, float]:
+    values = [np.asarray(item, dtype=np.float64).ravel() for item in series]
+    finite_chunks = [item[np.isfinite(item)] for item in values if item.size]
+    extra = np.asarray(list(extra_values), dtype=np.float64)
+    if extra.size:
+        finite_chunks.append(extra[np.isfinite(extra)])
+    if not finite_chunks:
+        return -1.0, 1.0
+
+    flat = np.concatenate([chunk for chunk in finite_chunks if chunk.size])
+    if flat.size == 0:
+        return -1.0, 1.0
+
+    lo = float(np.min(flat))
+    hi = float(np.max(flat))
+    if np.isclose(lo, hi):
+        pad = max(0.001, abs(lo) * 0.1)
+    else:
+        pad = (hi - lo) * 0.12
+    return lo - pad, hi + pad
+
+
+def save_grounding_diagnostics_plot(
+    plot_path: str | Path,
+    diagnostics: dict[str, object],
+    title: str | None = None,
+) -> None:
+    """Save a before/after grounding diagnostic plot as a PNG.
+
+    为了兼容 `conda activate robot` 环境，这里只依赖 Pillow，不依赖 matplotlib。
+    图里固定放三组曲线：root_z、support_min_z、applied_shift。
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError as exc:  # pragma: no cover - depends on local environment
+        raise RuntimeError("Pillow is required for --plot_path grounding diagnostics.") from exc
+
+    frame_index = np.asarray(diagnostics["frame_index"], dtype=np.float64)
+    root_z_before = np.asarray(diagnostics["root_z_before"], dtype=np.float64)
+    root_z_after = np.asarray(diagnostics["root_z_after"], dtype=np.float64)
+    support_before = np.asarray(diagnostics["support_min_z_before"], dtype=np.float64)
+    support_after = np.asarray(diagnostics["support_min_z_after"], dtype=np.float64)
+    applied_shift = np.asarray(diagnostics["applied_shift"], dtype=np.float64)
+    clearance = float(diagnostics.get("clearance", 0.0))
+
+    if frame_index.size == 0:
+        raise ValueError("Cannot plot empty grounding diagnostics.")
+
+    width = 1200
+    panel_height = 220
+    top = 54
+    gap = 48
+    left = 82
+    right = 26
+    bottom = 34
+    height = top + panel_height * 3 + gap * 2 + bottom
+
+    image = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default()
+
+    axis_color = (90, 90, 90)
+    grid_color = (228, 228, 228)
+    colors = {
+        "before": (45, 91, 169),
+        "after": (206, 82, 64),
+        "shift": (61, 132, 80),
+        "clearance": (120, 120, 120),
+    }
+
+    title_text = title or f"Grounding diagnostics ({diagnostics.get('mode', 'unknown')})"
+    draw.text((left, 20), title_text, fill=(20, 20, 20), font=font)
+
+    x_min = float(frame_index[0])
+    x_max = float(frame_index[-1]) if frame_index.size > 1 else float(frame_index[0] + 1.0)
+
+    def map_points(series: np.ndarray, y_min: float, y_max: float, panel_top: int) -> list[tuple[int, int]]:
+        series = np.asarray(series, dtype=np.float64)
+        x_span = max(1e-9, x_max - x_min)
+        y_span = max(1e-9, y_max - y_min)
+        points: list[tuple[int, int]] = []
+        for x_value, y_value in zip(frame_index, series):
+            x = left + (float(x_value) - x_min) / x_span * (width - left - right)
+            y = panel_top + panel_height - (float(y_value) - y_min) / y_span * panel_height
+            points.append((int(round(x)), int(round(y))))
+        return points
+
+    def draw_panel(
+        panel_index: int,
+        panel_title: str,
+        series_items: Sequence[tuple[str, np.ndarray, tuple[int, int, int]]],
+        y_min: float,
+        y_max: float,
+        hlines: Sequence[tuple[str, float, tuple[int, int, int]]] = (),
+    ) -> None:
+        panel_top = top + panel_index * (panel_height + gap)
+        panel_bottom = panel_top + panel_height
+        draw.rectangle((left, panel_top, width - right, panel_bottom), outline=axis_color)
+        draw.text((left, panel_top - 18), panel_title, fill=(20, 20, 20), font=font)
+
+        for tick in range(1, 4):
+            y = panel_top + int(panel_height * tick / 4)
+            draw.line((left, y, width - right, y), fill=grid_color)
+
+        draw.text((8, panel_top - 4), f"{y_max:.4f}", fill=axis_color, font=font)
+        draw.text((8, panel_bottom - 10), f"{y_min:.4f}", fill=axis_color, font=font)
+
+        for label, y_value, color in hlines:
+            y_span = max(1e-9, y_max - y_min)
+            y = panel_top + panel_height - (float(y_value) - y_min) / y_span * panel_height
+            y = int(round(y))
+            draw.line((left, y, width - right, y), fill=color, width=1)
+            draw.text((width - right - 110, y - 12), label, fill=color, font=font)
+
+        legend_x = left + 8
+        legend_y = panel_top + 8
+        for label, _, color in series_items:
+            draw.line((legend_x, legend_y + 5, legend_x + 22, legend_y + 5), fill=color, width=3)
+            draw.text((legend_x + 28, legend_y), label, fill=(30, 30, 30), font=font)
+            legend_x += 145
+
+        for _, series, color in series_items:
+            points = map_points(series, y_min, y_max, panel_top)
+            if len(points) == 1:
+                x, y = points[0]
+                draw.ellipse((x - 2, y - 2, x + 2, y + 2), fill=color)
+            else:
+                draw.line(points, fill=color, width=2)
+
+    root_range = _plot_range(root_z_before, root_z_after)
+    support_range = _plot_range(support_before, support_after, extra_values=[clearance, 0.0])
+    shift_range = _plot_range(applied_shift, extra_values=[0.0])
+
+    draw_panel(
+        0,
+        "root_z before / after",
+        (
+            ("root_z before", root_z_before, colors["before"]),
+            ("root_z after", root_z_after, colors["after"]),
+        ),
+        *root_range,
+    )
+    draw_panel(
+        1,
+        "support_min_z before / after",
+        (
+            ("support before", support_before, colors["before"]),
+            ("support after", support_after, colors["after"]),
+        ),
+        *support_range,
+        hlines=(("clearance", clearance, colors["clearance"]),),
+    )
+    draw_panel(
+        2,
+        "applied root_z shift",
+        (("applied shift", applied_shift, colors["shift"]),),
+        *shift_range,
+        hlines=(("zero", 0.0, colors["clearance"]),),
+    )
+
+    plot_path = Path(plot_path)
+    if plot_path.parent:
+        plot_path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(plot_path)
