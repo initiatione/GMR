@@ -457,7 +457,12 @@ def build_colored_xml(
 def main() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     human_robot_root = repo_root.parent
-    parser = argparse.ArgumentParser(description="Build T800 MuJoCo visual meshes split by source DAE material.")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Build legacy T800 MuJoCo visual meshes split by source DAE material. "
+            "Use apply_t800_reference_visual_mjcf.py for the default reference OBJ/PNG appearance."
+        )
+    )
     parser.add_argument(
         "--source-dae-dir",
         type=Path,

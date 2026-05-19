@@ -11,6 +11,7 @@ GMR_ROOT = Path(__file__).resolve().parents[1]
 T800_XML = GMR_ROOT / "assets" / "t800" / "mujoco" / "t800_full_gmr.xml"
 T800_TRANSPARENT_XML = GMR_ROOT / "assets" / "t800" / "mujoco" / "t800_full_gmr_transparent.xml"
 T800_MESH_DIR = GMR_ROOT / "assets" / "t800" / "meshes"
+T800_TEXTURE_DIR = GMR_ROOT / "assets" / "t800" / "texture"
 
 
 def _geom_group(model: mujoco.MjModel, geom_id: int) -> int:
@@ -70,6 +71,20 @@ def _binary_stl_signed_volume(path: Path) -> float:
     return signed_volume
 
 
+def _obj_bbox(path: Path) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    bbox: tuple[list[float], list[float]] | None = None
+    with path.open(encoding="utf-8", errors="replace") as obj:
+        for line in obj:
+            if not line.startswith("v "):
+                continue
+            parts = line.split()
+            vertex = (float(parts[1]), float(parts[2]), float(parts[3]))
+            bbox = _update_bbox(bbox, vertex)
+
+    assert bbox is not None
+    return tuple(bbox[0]), tuple(bbox[1])  # type: ignore[return-value]
+
+
 def _merge_bboxes(
     bboxes: list[tuple[tuple[float, float, float], tuple[float, float, float]]],
 ) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
@@ -92,19 +107,51 @@ def _same_sign(left: float, right: float) -> bool:
     return (left > 0 and right > 0) or (left < 0 and right < 0)
 
 
-def test_t800_visual_meshes_keep_source_material_colors() -> None:
+def test_t800_visual_meshes_use_reference_obj_texture_materials() -> None:
     model = mujoco.MjModel.from_xml_path(str(T800_XML))
+    tree = ET.parse(T800_XML)
+    root = tree.getroot()
 
     visual_rgba = {
         tuple(round(float(channel), 3) for channel in model.geom_rgba[geom_id])
         for geom_id in range(model.ngeom)
         if _geom_group(model, geom_id) == 2
     }
+    visual_geoms = [geom for geom in root.findall(".//geom") if geom.get("class") == "visual_mesh"]
+    texture_files = [
+        texture.attrib["file"]
+        for texture in root.findall("./asset/texture")
+        if "file" in texture.attrib
+    ]
 
-    assert len(visual_rgba) >= 5
-    assert (1.0, 1.0, 1.0, 1.0) in visual_rgba
-    assert (0.0, 0.0, 0.0, 1.0) in visual_rgba
-    assert (1.0, 0.286, 0.007, 1.0) in visual_rgba
+    assert len(visual_geoms) == 26
+    assert visual_rgba == {
+        (0.753, 0.753, 0.753, 1.0),
+        (0.792, 0.82, 0.933, 1.0),
+    }
+    assert len(texture_files) == 15
+    assert "LINK_BASE.png" in texture_files
+    assert "LINK_TORSO_YAW.png" in texture_files
+    assert "LINK_HEAD_YAW.png" in texture_files
+
+
+def test_t800_visual_meshes_use_reference_obj_textures() -> None:
+    model = mujoco.MjModel.from_xml_path(str(T800_XML))
+    tree = ET.parse(T800_XML)
+    root = tree.getroot()
+
+    mesh_files = [mesh.attrib["file"] for mesh in root.findall("./asset/mesh")]
+    texture_files = [
+        texture.attrib["file"]
+        for texture in root.findall("./asset/texture")
+        if "file" in texture.attrib
+    ]
+
+    assert len([file for file in mesh_files if file.endswith(".obj")]) == 26
+    assert len(texture_files) == 15
+    assert all((T800_MESH_DIR / file).is_file() for file in mesh_files)
+    assert all((T800_TEXTURE_DIR / Path(file).name).is_file() for file in texture_files)
+    assert model.ntex >= 15
 
 
 def test_t800_fallback_collision_proxies_are_invisible_and_quiet_at_initial_pose() -> None:
@@ -132,7 +179,27 @@ def test_t800_fallback_collision_proxies_are_invisible_and_quiet_at_initial_pose
     assert fallback_contact_pairs == []
 
 
-def test_t800_transparent_model_keeps_source_colors_with_transparent_alpha() -> None:
+def test_t800_reference_visual_update_keeps_joint_and_collision_contract() -> None:
+    tree = ET.parse(T800_XML)
+    root = tree.getroot()
+
+    joints = root.findall(".//joint")
+    collision_geoms = [
+        geom
+        for geom in root.findall(".//geom")
+        if (geom.get("class") or "").startswith("collision_")
+    ]
+
+    assert len(joints) == 26
+    assert len(collision_geoms) == 32
+    assert {geom.attrib["class"] for geom in collision_geoms} == {
+        "collision_urdf",
+        "collision_fallback",
+    }
+    assert all("mesh" not in geom.attrib for geom in collision_geoms)
+
+
+def test_t800_transparent_model_keeps_reference_visuals_with_transparent_alpha() -> None:
     model = mujoco.MjModel.from_xml_path(str(T800_TRANSPARENT_XML))
 
     visual_rgba = {
@@ -141,47 +208,41 @@ def test_t800_transparent_model_keeps_source_colors_with_transparent_alpha() -> 
         if _geom_group(model, geom_id) == 2
     }
 
-    assert len(visual_rgba) >= 5
+    assert len(visual_rgba) == 2
     assert {rgba[3] for rgba in visual_rgba} == {0.22}
-    assert (1.0, 1.0, 1.0, 0.22) in visual_rgba
-    assert (0.0, 0.0, 0.0, 0.22) in visual_rgba
+    assert (0.792, 0.82, 0.933, 0.22) in visual_rgba
 
 
-def test_t800_colored_mesh_parts_preserve_original_visual_bounding_boxes() -> None:
+def test_t800_reference_obj_meshes_preserve_original_visual_bounding_boxes() -> None:
     tree = ET.parse(T800_XML)
     root = tree.getroot()
 
-    colored_mesh_files_by_link: dict[str, list[Path]] = {}
     for mesh in root.findall("./asset/mesh"):
         mesh_name = mesh.attrib["name"]
-        if "__mat" not in mesh_name:
+        mesh_file = mesh.attrib["file"]
+        if not mesh_file.endswith(".obj"):
             continue
-        link_name = mesh_name.split("__mat", 1)[0]
-        colored_mesh_files_by_link.setdefault(link_name, []).append(T800_MESH_DIR / mesh.attrib["file"])
 
-    assert len(colored_mesh_files_by_link) == 26
-    for link_name, colored_mesh_files in colored_mesh_files_by_link.items():
-        original_bbox = _binary_stl_bbox(T800_MESH_DIR / f"{link_name}.stl")
-        colored_bbox = _merge_bboxes([_binary_stl_bbox(path) for path in colored_mesh_files])
+        original_bbox = _binary_stl_bbox(T800_MESH_DIR / f"{mesh_name}.stl")
+        reference_bbox = _obj_bbox(T800_MESH_DIR / mesh_file)
 
-        assert _max_bbox_abs_diff(original_bbox, colored_bbox) < 1e-6
+        assert _max_bbox_abs_diff(original_bbox, reference_bbox) < 1e-5
 
 
-def test_t800_colored_mesh_parts_preserve_original_visual_winding() -> None:
+def test_t800_reference_obj_meshes_have_material_bindings_for_textured_links() -> None:
     tree = ET.parse(T800_XML)
     root = tree.getroot()
 
-    colored_mesh_files_by_link: dict[str, list[Path]] = {}
-    for mesh in root.findall("./asset/mesh"):
-        mesh_name = mesh.attrib["name"]
-        if "__mat" not in mesh_name:
-            continue
-        link_name = mesh_name.split("__mat", 1)[0]
-        colored_mesh_files_by_link.setdefault(link_name, []).append(T800_MESH_DIR / mesh.attrib["file"])
+    textured_materials = {
+        material.attrib["name"]
+        for material in root.findall("./asset/material")
+        if "texture" in material.attrib and material.attrib["name"].startswith("LINK_")
+    }
+    visual_materials = {
+        geom.attrib["material"]
+        for geom in root.findall(".//geom")
+        if geom.get("class") == "visual_mesh" and "material" in geom.attrib
+    }
 
-    assert len(colored_mesh_files_by_link) == 26
-    for link_name, colored_mesh_files in colored_mesh_files_by_link.items():
-        original_volume = _binary_stl_signed_volume(T800_MESH_DIR / f"{link_name}.stl")
-        colored_volume = sum(_binary_stl_signed_volume(path) for path in colored_mesh_files)
-
-        assert _same_sign(original_volume, colored_volume), link_name
+    assert len(textured_materials) == 15
+    assert textured_materials.issubset(visual_materials)
